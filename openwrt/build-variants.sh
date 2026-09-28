@@ -15,7 +15,7 @@ OUT="$(realpath -m "$2")"
 VARIANTS="$(realpath "$3")"
 LIMIT="${FIRMWARE_LIMIT:-16121856}"
 VERSION="${OPENWRT_VERSION:-snapshot}"
-SUMMARY="${SUMMARY:-/dev/null}"
+SUMMARY="$(realpath -m "${SUMMARY:-/dev/null}")"
 TARGET_DIR="$SRC/bin/targets/ramips/mt7621"
 
 mkdir -p "$OUT"
