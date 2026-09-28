@@ -1,42 +1,28 @@
 name: probe
 on:
   push:
-    paths: ['.github/workflows/probe.yml']
+    paths: ['.github/workflows/probe.yml', 'xray-slim/**']
   workflow_dispatch:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
     steps:
+      - uses: actions/checkout@v4
       - name: Clone xray
-        run: git clone --depth 1 -b v26.3.27 https://github.com/XTLS/Xray-core.git xray
+        run: git clone --depth 1 -b v26.3.27 https://github.com/XTLS/Xray-core.git xray-src
       - uses: actions/setup-go@v5
         with:
-          go-version-file: xray/go.mod
+          go-version-file: xray-src/go.mod
           cache: false
-      - name: Variants (lower bound, pb config only)
-        working-directory: xray
+      - name: Show API usage
+        working-directory: xray-src/infra/conf
         run: |
-          base='app/dispatcher app/proxyman/inbound app/proxyman/outbound app/log app/policy app/router transport/internet/tagged/taggedimpl proxy/blackhole proxy/dns proxy/dokodemo proxy/freedom proxy/socks proxy/vless/outbound transport/internet/tcp transport/internet/tls transport/internet/reality transport/internet/udp transport/internet/websocket transport/internet/httpupgrade transport/internet/headers/noop'
-          build() {
-            name=$1; shift
-            { echo 'package all'; echo 'import ('; for p in "$@"; do echo "  _ \"github.com/xtls/xray-core/$p\""; done; echo ')'; } > main/distro/all/all.go
-            go build -trimpath -ldflags '-s -w -buildid=' -o /tmp/x ./main 2>&1 | tail -5
-            echo "$name: $(stat -c %s /tmp/x) raw, $(xz -9e -c /tmp/x | wc -c) xz"
-          }
-          build base $base
-          build base+tun $base proxy/tun
-          build base+xhttp $base transport/internet/splithttp
-          build base+tun+xhttp $base proxy/tun transport/internet/splithttp
-          build base+tun+xhttp+dns $base proxy/tun transport/internet/splithttp app/dns
-          build base+tun+xhttp+json $base proxy/tun transport/internet/splithttp main/json
-          git checkout main/distro/all/all.go
-      - name: Compile errors after removing heavy infra/conf files
-        working-directory: xray
+          grep -n 'API\|Metrics\|commander' xray.go | head -40
+          grep -rn 'Hysteria\|hysteria\.' --include=*.go . | grep -v '^./hysteria.go' | grep -v _test | head -40
+          grep -n 'type REALITYConfig' -A 30 transport_internet.go | grep json
+          grep -n 'type SplitHTTPConfig' -A 30 transport_internet.go | grep json
+          sed -n '1,60p' tun.go
+          sed -n '1,40p' dokodemo.go
+      - name: Build slim
         run: |
-          cd infra/conf
-          rm -f wireguard.go hysteria.go vmess.go trojan.go shadowsocks.go grpc.go api.go metrics.go observatory.go fakedns.go *_test.go
-          go build . 2>&1 | head -100 || true
-          echo '=== xray.go Config struct'; grep -n 'json:"' xray.go | head -60
-          echo '=== transport_internet refs'; grep -n 'hysteria\.\|kcp\.\|GRPC\|Hysteria\|KCP' transport_internet.go | head -60
-          echo '=== dns.go imports'; sed -n '1,30p' dns.go
+          bash xray-slim/build.sh v26.3.27 /tmp/xray 2>&1 | tail -60
