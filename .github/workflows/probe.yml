@@ -14,15 +14,17 @@ jobs:
         with:
           go-version-file: xray-src/go.mod
           cache: false
-      - name: Show API usage
-        working-directory: xray-src/infra/conf
-        run: |
-          grep -n 'API\|Metrics\|commander' xray.go | head -40
-          grep -rn 'Hysteria\|hysteria\.' --include=*.go . | grep -v '^./hysteria.go' | grep -v _test | head -40
-          grep -n 'type REALITYConfig' -A 30 transport_internet.go | grep json
-          grep -n 'type SplitHTTPConfig' -A 30 transport_internet.go | grep json
-          sed -n '1,60p' tun.go
-          sed -n '1,40p' dokodemo.go
       - name: Build slim
+        run: bash xray-slim/build.sh v26.3.27 /tmp/xray 2>&1 | tail -30
+      - name: Analyse
+        working-directory: xray-src
+        env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
         run: |
-          bash xray-slim/build.sh v26.3.27 /tmp/xray 2>&1 | tail -60
+          go build -trimpath -o /tmp/xray-dbg ./main
+          go tool nm -size -sort size /tmp/xray-dbg > /tmp/nm.txt
+          echo '=== size by package (top 60)'
+          awk '{sz=$2; name=$4; sub(/\(.*$/, "", name); n=split(name, a, "."); pkg=a[1]; for(i=2;i<n;i++){ if (a[i] ~ /^[a-z0-9_\/-]+$/ && a[i] !~ /^func[0-9]/) pkg=pkg"."a[i]; else break }; sub(/\.[^\/]*$/, "", pkg); s[pkg]+=sz} END {for (p in s) printf "%10d %s\n", s[p], p}' /tmp/nm.txt | sort -rn | head -60
+          echo '=== by module'
+          awk '{sz=$2; name=$4; if (name ~ /^(github\.com|golang\.org|google\.golang\.org|gvisor\.dev|go4\.org|lukechampine\.com|gopkg\.in)\//) { split(name, a, "/"); m=a[1]"/"a[2]"/"a[3] } else { m="std:" name; sub(/[\.\/].*/, "", m) }; sub(/\..*$/, "", m); s[m]+=sz} END {for (p in s) printf "%10d %s\n", s[p], p}' /tmp/nm.txt | sort -rn | head -40
+          echo '=== who imports grpc / yaml / toml / wireguard'
+          go list -deps -f '{{.ImportPath}}: {{join .Imports " "}}' ./main | grep -E 'google.golang.org/grpc[" ]|google.golang.org/grpc$|ghodss/yaml|go-toml|wireguard|sing-shadowsocks|app/commander' | grep -v '^google.golang.org/grpc' | cut -c1-300
