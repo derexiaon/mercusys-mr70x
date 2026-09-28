@@ -1,0 +1,13 @@
+
+config xray 'main'
+	option enabled '1'
+	option config '/etc/xray/config.json'
+	# Resolve all DNS through the tunnel (dnsmasq -> 127.0.0.1#dns_port -> xray)
+	option dns_tunnel '1'
+	option dns_port '5353'
+	# Upstream DNS used inside the tunnel
+	option upstream_dns '1.1.1.1'
+	# Used directly (not through the tunnel) for the VPN server name and NTP
+	option bootstrap_dns '77.88.8.8'
+	# Go runtime soft memory limit (router has 128 MB RAM)
+	option memlimit '40MiB'

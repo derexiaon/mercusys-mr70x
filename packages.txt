@@ -1,0 +1,18 @@
+# Packages added to / removed from the default OpenWrt set for mercusys_mr70x-v1.
+# One per line, "-name" removes a package. Comments start with "#".
+
+# Web UI in Russian
+luci
+luci-i18n-base-ru
+
+# dnsmasq with nftset support (needed by pbr for domain policies)
+-dnsmasq
+dnsmasq-full
+
+# Policy-based routing
+pbr
+luci-app-pbr
+luci-i18n-pbr-ru
+
+# TUN device for xray (the xray binary itself is built separately, see xray-slim/)
+kmod-tun

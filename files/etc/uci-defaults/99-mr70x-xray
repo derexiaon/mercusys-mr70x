@@ -1,0 +1,87 @@
+#!/bin/sh
+# First-boot setup: xray0 TUN interface, firewall zone, dnsmasq, pbr policies.
+
+# Russian locale / time zone by default.
+uci -q batch <<-EOF
+	set system.@system[0].zonename='Europe/Moscow'
+	set system.@system[0].timezone='MSK-3'
+	set luci.main.lang='ru'
+EOF
+
+# netifd interface on top of the TUN device created by xray. The address
+# matters: pbr uses it as the gateway of interfaces without one.
+if ! uci -q get network.xray >/dev/null; then
+	uci -q batch <<-EOF
+		set network.xray=interface
+		set network.xray.proto='static'
+		set network.xray.device='xray0'
+		set network.xray.ipaddr='172.19.0.1'
+		set network.xray.netmask='255.255.255.252'
+	EOF
+fi
+
+# Firewall zone: LAN -> xray allowed, masquerade for replies.
+if ! uci -q get firewall.xray >/dev/null; then
+	uci -q batch <<-EOF
+		set firewall.xray=zone
+		set firewall.xray.name='xray'
+		add_list firewall.xray.network='xray'
+		set firewall.xray.input='REJECT'
+		set firewall.xray.output='ACCEPT'
+		set firewall.xray.forward='REJECT'
+		set firewall.xray.masq='1'
+		set firewall.xray.mtu_fix='1'
+		set firewall.lan_xray=forwarding
+		set firewall.lan_xray.src='lan'
+		set firewall.lan_xray.dest='xray'
+	EOF
+fi
+
+# Fixed dnsmasq conf-dir: xray init script drops its DNS snippet there.
+uci -q batch <<-EOF
+	set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d'
+EOF
+
+# Policy-based routing: selected domains / subnets -> xray.
+LISTS=https://raw.githubusercontent.com/itdoginfo/allow-domains/main
+if ! uci -q get pbr.mr70x_domains >/dev/null; then
+	uci -q batch <<-EOF
+		set pbr.config.enabled='1'
+		set pbr.config.resolver_set='dnsmasq.nftset'
+		set pbr.config.ipv6_enabled='0'
+		set pbr.config.strict_enforcement='1'
+		del pbr.config.supported_interface
+		add_list pbr.config.supported_interface='xray'
+		set pbr.mr70x_server=policy
+		set pbr.mr70x_server.name='Xray server (direct)'
+		set pbr.mr70x_server.interface='wan'
+		set pbr.mr70x_server.enabled='0'
+		set pbr.mr70x_domains=policy
+		set pbr.mr70x_domains.name='Russia inside: domains (itdoginfo)'
+		set pbr.mr70x_domains.dest_addr='$LISTS/Russia/inside-raw.lst'
+		set pbr.mr70x_domains.interface='xray'
+		set pbr.mr70x_domains.enabled='1'
+		set pbr.mr70x_subnets=policy
+		set pbr.mr70x_subnets.name='Telegram, Meta, Twitter, Discord subnets'
+		set pbr.mr70x_subnets.dest_addr='$LISTS/Subnets/IPv4/telegram.lst $LISTS/Subnets/IPv4/meta.lst $LISTS/Subnets/IPv4/twitter.lst $LISTS/Subnets/IPv4/discord.lst'
+		set pbr.mr70x_subnets.interface='xray'
+		set pbr.mr70x_subnets.enabled='1'
+		set pbr.mr70x_custom=policy
+		set pbr.mr70x_custom.name='My domains'
+		set pbr.mr70x_custom.dest_addr='chatgpt.com openai.com oaistatic.com oaiusercontent.com claude.ai anthropic.com'
+		set pbr.mr70x_custom.interface='xray'
+		set pbr.mr70x_custom.enabled='1'
+	EOF
+	# Server exception must be evaluated before the other policies.
+	uci -q reorder pbr.mr70x_server=1
+fi
+
+# Refresh the lists daily (pbr re-downloads them on restart).
+mkdir -p /etc/crontabs
+touch /etc/crontabs/root
+grep -q 'init.d/pbr' /etc/crontabs/root || \
+	echo '30 5 * * * /etc/init.d/pbr restart' >> /etc/crontabs/root
+/etc/init.d/cron enable
+
+uci commit
+exit 0

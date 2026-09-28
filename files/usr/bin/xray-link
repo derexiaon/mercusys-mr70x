@@ -1,0 +1,268 @@
+#!/bin/sh
+# Generate /etc/xray/config.json from a VLESS share link and (re)start Xray.
+#
+#   xray-link 'vless://UUID@HOST:PORT?type=tcp&security=reality&pbk=...&sid=...&sni=...&fp=chrome&flow=xtls-rprx-vision#name'
+#   xray-link --show        print the saved link
+#
+# Supported: VLESS (+flow xtls-rprx-vision, +VLESS encryption),
+# transports raw/tcp, xhttp, ws, httpupgrade; security none, tls, reality.
+
+. /lib/functions.sh
+. /usr/share/libubox/jshn.sh
+
+CONF_DIR=/etc/xray
+LINK_FILE=$CONF_DIR/link
+
+die() {
+	echo "Ошибка: $*" >&2
+	exit 1
+}
+
+urldecode() {
+	local s
+	s="$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"
+	printf '%b' "$s"
+}
+
+param() {
+	local kv IFS='&'
+	for kv in $QUERY; do
+		case "$kv" in
+			"$1="*) urldecode "${kv#*=}"; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+case "$1" in
+	--show)
+		cat "$LINK_FILE" 2>/dev/null
+		exit 0
+		;;
+	''|-h|--help)
+		sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+		exit 1
+		;;
+esac
+
+set -f
+LINK="$(printf '%s' "$1" | tr -d ' \t\r\n')"
+case "$LINK" in
+	vless://*) ;;
+	*) die "поддерживаются только ссылки vless://" ;;
+esac
+
+REST="${LINK#vless://}"
+REST="${REST%%#*}"
+QUERY=""
+case "$REST" in
+	*\?*)
+		QUERY="${REST#*\?}"
+		REST="${REST%%\?*}"
+		;;
+esac
+REST="${REST%/}"
+
+case "$REST" in
+	*@*) ;;
+	*) die "в ссылке нет UUID@адрес" ;;
+esac
+UUID="$(urldecode "${REST%@*}")"
+HOSTPORT="${REST##*@}"
+case "$HOSTPORT" in
+	\[*\]:*)
+		HOST="${HOSTPORT#\[}"
+		HOST="${HOST%%\]*}"
+		PORT="${HOSTPORT##*\]:}"
+		;;
+	*:*)
+		HOST="${HOSTPORT%:*}"
+		PORT="${HOSTPORT##*:}"
+		;;
+	*) die "в ссылке нет порта" ;;
+esac
+[ -n "$UUID" ] || die "пустой UUID"
+[ -n "$HOST" ] || die "пустой адрес сервера"
+case "$PORT" in
+	''|*[!0-9]*) die "неверный порт: $PORT" ;;
+esac
+
+TYPE="$(param type)" || TYPE=tcp
+SECURITY="$(param security)" || SECURITY=none
+ENCRYPTION="$(param encryption)" || ENCRYPTION=none
+FLOW="$(param flow)" || FLOW=""
+SNI="$(param sni)" || SNI="$(param peer)" || SNI=""
+FP="$(param fp)" || FP=chrome
+PBK="$(param pbk)" || PBK=""
+SID="$(param sid)" || SID=""
+SPX="$(param spx)" || SPX=""
+PQV="$(param pqv)" || PQV=""
+ALPN="$(param alpn)" || ALPN=""
+XPATH="$(param path)" || XPATH=""
+XHOST="$(param host)" || XHOST=""
+MODE="$(param mode)" || MODE=""
+HEADER="$(param headerType)" || HEADER=none
+INSECURE="$(param allowInsecure)" || INSECURE=0
+
+case "$TYPE" in
+	tcp|raw) NETWORK=raw ;;
+	xhttp|splithttp) NETWORK=xhttp ;;
+	ws) NETWORK=ws ;;
+	httpupgrade) NETWORK=httpupgrade ;;
+	*) die "транспорт '$TYPE' не включён в облегчённую сборку (есть: tcp/raw, xhttp, ws, httpupgrade)" ;;
+esac
+case "$SECURITY" in
+	none|tls|reality) ;;
+	*) die "security '$SECURITY' не поддерживается" ;;
+esac
+[ "$SECURITY" = reality ] && [ -z "$PBK" ] && die "для reality нужен параметр pbk"
+[ "$HEADER" = none ] || [ "$NETWORK" != raw ] || die "headerType=$HEADER не поддерживается"
+
+config_load xray
+config_get DNS_PORT main dns_port 5353
+config_get UPSTREAM_DNS main upstream_dns 1.1.1.1
+
+# gen_config <with_tun>: print the config; "xray run -test" really opens the
+# TUN device, so the syntax check is done on a copy without it.
+gen_config() {
+json_init
+json_add_object log
+	json_add_string loglevel warning
+json_close_object
+
+json_add_array inbounds
+	if [ "$1" = 1 ]; then
+	json_add_object
+		json_add_string tag tun-in
+		json_add_string protocol tun
+		json_add_object settings
+			json_add_string name xray0
+			json_add_int MTU 1500
+		json_close_object
+	json_close_object
+	fi
+	json_add_object
+		json_add_string tag dns-in
+		json_add_string listen 127.0.0.1
+		json_add_int port "$DNS_PORT"
+		json_add_string protocol dokodemo-door
+		json_add_object settings
+			json_add_string address "$UPSTREAM_DNS"
+			json_add_int port 53
+			json_add_string network "tcp,udp"
+		json_close_object
+	json_close_object
+json_close_array
+
+json_add_array outbounds
+	json_add_object
+		json_add_string tag proxy
+		json_add_string protocol vless
+		json_add_object settings
+			json_add_string address "$HOST"
+			json_add_int port "$PORT"
+			json_add_string id "$UUID"
+			json_add_string encryption "$ENCRYPTION"
+			[ -n "$FLOW" ] && json_add_string flow "$FLOW"
+		json_close_object
+		json_add_object streamSettings
+			json_add_string network "$NETWORK"
+			json_add_string security "$SECURITY"
+			case "$SECURITY" in
+			reality)
+				json_add_object realitySettings
+					json_add_string serverName "$SNI"
+					json_add_string fingerprint "$FP"
+					json_add_string publicKey "$PBK"
+					json_add_string shortId "$SID"
+					[ -n "$SPX" ] && json_add_string spiderX "$SPX"
+					[ -n "$PQV" ] && json_add_string mldsa65Verify "$PQV"
+				json_close_object
+				;;
+			tls)
+				json_add_object tlsSettings
+					[ -n "$SNI" ] && json_add_string serverName "$SNI"
+					json_add_string fingerprint "$FP"
+					[ "$INSECURE" = 1 ] && json_add_boolean allowInsecure 1
+					if [ -n "$ALPN" ]; then
+						json_add_array alpn
+						for a in $(echo "$ALPN" | tr ',' ' '); do
+							json_add_string "" "$a"
+						done
+						json_close_array
+					fi
+				json_close_object
+				;;
+			esac
+			case "$NETWORK" in
+			xhttp)
+				json_add_object xhttpSettings
+					json_add_string path "${XPATH:-/}"
+					[ -n "$XHOST" ] && json_add_string host "$XHOST"
+					json_add_string mode "${MODE:-auto}"
+				json_close_object
+				;;
+			ws)
+				json_add_object wsSettings
+					json_add_string path "${XPATH:-/}"
+					[ -n "$XHOST" ] && json_add_string host "$XHOST"
+				json_close_object
+				;;
+			httpupgrade)
+				json_add_object httpupgradeSettings
+					json_add_string path "${XPATH:-/}"
+					[ -n "$XHOST" ] && json_add_string host "$XHOST"
+				json_close_object
+				;;
+			esac
+		json_close_object
+	json_close_object
+	json_add_object
+		json_add_string tag direct
+		json_add_string protocol freedom
+	json_close_object
+	json_add_object
+		json_add_string tag block
+		json_add_string protocol blackhole
+	json_close_object
+json_close_array
+json_dump
+}
+
+mkdir -p "$CONF_DIR"
+umask 077
+TEST_CONF=/tmp/xray-link-test.json
+gen_config 0 > "$TEST_CONF" || die "не удалось сформировать конфиг"
+gen_config 1 > "$CONF_DIR/config.json.new" || die "не удалось записать конфиг"
+
+echo "Проверка конфигурации..."
+if ! GOMEMLIMIT=40MiB /usr/bin/xray run -test -c "$TEST_CONF" >/tmp/xray-test.log 2>&1; then
+	cat /tmp/xray-test.log >&2
+	rm -f "$CONF_DIR/config.json.new" "$TEST_CONF"
+	die "xray отклонил конфигурацию"
+fi
+rm -f "$TEST_CONF"
+mv "$CONF_DIR/config.json.new" "$CONF_DIR/config.json"
+printf '%s\n' "$LINK" > "$LINK_FILE"
+
+# Keep the connection to the VPN server itself out of the tunnel.
+uci -q batch <<-EOF
+	set pbr.mr70x_server=policy
+	set pbr.mr70x_server.name='Xray server (direct)'
+	set pbr.mr70x_server.interface='wan'
+	set pbr.mr70x_server.dest_addr='$HOST'
+	set pbr.mr70x_server.enabled='1'
+	set xray.main.enabled='1'
+	commit pbr
+	commit xray
+EOF
+
+echo "Сервер: $HOST:$PORT ($NETWORK/$SECURITY${FLOW:+, $FLOW})"
+# Used by the CI smoke test (chroot without procd).
+[ -n "$XRAY_LINK_NO_RESTART" ] && exit 0
+/etc/init.d/xray enable
+/etc/init.d/xray restart
+# pbr downloads the lists, which can take a while: do it in background.
+( sleep 5; /etc/init.d/pbr restart ) >/dev/null 2>&1 </dev/null &
+echo "Готово. Xray перезапущен, pbr перезапускается в фоне."
+exit 0

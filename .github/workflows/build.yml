@@ -1,0 +1,126 @@
+name: build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      openwrt_version:
+        description: OpenWrt release
+        default: '25.12.5'
+      xray_version:
+        description: Xray-core tag
+        default: 'v26.3.27'
+
+permissions:
+  contents: write
+
+env:
+  OPENWRT_VERSION: ${{ inputs.openwrt_version || '25.12.5' }}
+  XRAY_VERSION: ${{ inputs.xray_version || 'v26.3.27' }}
+  TARGET: ramips/mt7621
+  PROFILE: mercusys_mr70x-v1
+  # IMAGE_SIZE of mercusys_mr70x-v1 in target/linux/ramips/image/mt7621.mk
+  FIRMWARE_LIMIT: 16121856
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Xray-core ${{ env.XRAY_VERSION }}
+        run: git clone --depth 1 -b "$XRAY_VERSION" https://github.com/XTLS/Xray-core.git xray-src
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: xray-src/go.mod
+          cache-dependency-path: xray-src/go.sum
+
+      - name: Build slim Xray (mipsle softfloat)
+        run: |
+          set -o pipefail
+          bash xray-slim/build.sh "$XRAY_VERSION" files/usr/bin/xray | tee -a "$GITHUB_STEP_SUMMARY"
+          file files/usr/bin/xray
+
+      - name: Install ImageBuilder dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential libncurses-dev zlib1g-dev gawk git \
+            gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools zstd >/dev/null
+
+      - name: Download ImageBuilder ${{ env.OPENWRT_VERSION }}
+        run: |
+          base="https://downloads.openwrt.org/releases/$OPENWRT_VERSION/targets/$TARGET"
+          wget -q "$base/sha256sums"
+          ib="$(grep -o 'openwrt-imagebuilder-[^ ]*Linux-x86_64.tar.[a-z]*' sha256sums | head -n1)"
+          wget -q "$base/$ib"
+          grep " \*$ib\$" sha256sums | sha256sum -c -
+          mkdir ib && tar -xf "$ib" -C ib --strip-components=1
+
+      - name: Build firmware
+        run: |
+          chmod 0755 files/etc/init.d/* files/usr/bin/* files/etc/uci-defaults/*
+          mkdir -p files/etc
+          {
+            echo "OpenWrt $OPENWRT_VERSION + Xray $XRAY_VERSION (slim) + pbr"
+            echo "built $(date -u +%F) from ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}"
+          } > files/etc/mr70x-build
+          packages="$(sed 's/#.*//' packages.txt | xargs)"
+          echo "Packages: $packages"
+          make -C ib image PROFILE="$PROFILE" PACKAGES="$packages" \
+            FILES="$GITHUB_WORKSPACE/files" EXTRA_IMAGE_NAME=xray
+
+      - name: Check size
+        run: |
+          cd ib/bin/targets/$TARGET
+          ls -l
+          img="$(ls *-squashfs-sysupgrade.bin)"
+          size=$(stat -c %s "$img")
+          echo "sysupgrade: $size bytes, limit $FIRMWARE_LIMIT, free for overlay: $(( (FIRMWARE_LIMIT - size) / 1024 )) KiB" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$size" -lt "$FIRMWARE_LIMIT" ]
+
+      - name: Smoke test in the built rootfs (qemu chroot)
+        run: |
+          sudo apt-get install -y -qq qemu-user-static >/dev/null
+          R="$(ls -d ib/build_dir/target-*/root-ramips)"
+          sudo mount -t proc proc "$R/proc"
+          trap 'sudo umount "$R/proc"' EXIT
+          run() { sudo chroot "$R" /usr/bin/env XRAY_LINK_NO_RESTART=1 /bin/sh -c "$1"; }
+          run '/usr/bin/xray version'
+          # /etc/config/network is generated on the first boot by config_generate
+          run 'touch /etc/config/network && . /etc/uci-defaults/99-mr70x-xray'
+          # xray-link validates the config with "xray run -test" (without the TUN inbound)
+          run "/usr/bin/xray-link 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@vpn.example.com:443?type=tcp&security=reality&pbk=Z84J2IelR9ch3k8VtlVhhs5ycBUlXA7wHBWcBrjqnAw&sid=6ba85179e30d4fc2&sni=www.microsoft.com&fp=chrome&flow=xtls-rprx-vision&spx=%2F#test%20reality'"
+          run 'cat /etc/xray/config.json; echo'
+          run '[ "$(jsonfilter -i /etc/xray/config.json -e "@.outbounds[0].streamSettings.realitySettings.spiderX")" = / ]'
+          run "/usr/bin/xray-link 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@1.2.3.4:8443?type=xhttp&security=tls&sni=cdn.example.com&host=cdn.example.com&path=%2Fxh&mode=auto&alpn=h2%2Chttp%2F1.1#xhttp'"
+          run 'cat /etc/xray/config.json; echo'
+          run '[ "$(jsonfilter -i /etc/xray/config.json -e "@.outbounds[0].streamSettings.tlsSettings.alpn[1]")" = http/1.1 ]'
+          if run "/usr/bin/xray-link 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@1.2.3.4:443?type=grpc&security=tls'"; then
+            echo "grpc link must be rejected"; exit 1
+          fi
+          run 'uci show pbr; uci show network.xray; uci show firewall.xray; cat /etc/crontabs/root'
+          run '[ "$(uci get network.xray.proto)" = static ] && [ "$(uci get pbr.@policy[0].name)" = "Xray server (direct)" ]'
+
+      - name: Collect
+        run: |
+          mkdir out
+          cp ib/bin/targets/$TARGET/*-squashfs-*.bin ib/bin/targets/$TARGET/*.manifest out/
+          cp files/etc/mr70x-build out/BUILDINFO.txt
+          (cd out && sha256sum * > sha256sums.txt)
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-${{ env.OPENWRT_VERSION }}-mr70x-xray
+          path: out/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          body_path: out/BUILDINFO.txt
