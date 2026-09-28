@@ -172,7 +172,8 @@ TOML/YAML-конфиги, `geoip:` / `geosite:` в правилах маршру
    выполняется `xray-link` и `xray run -test`.
 
 Сменить версии можно при ручном запуске (*Actions → build → Run workflow*) или в `env`
-workflow. Релиз: `git tag v25.12.5-1 && git push --tags`.
+workflow. Релиз: *Actions → build → Run workflow* с заполненным `release_tag`
+(например `v25.12.5-2`) или `git tag v25.12.5-2 && git push --tags`.
 
 Структура:
 
