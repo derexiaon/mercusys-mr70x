@@ -13,6 +13,9 @@ on:
       xray_version:
         description: Xray-core tag
         default: 'v26.3.27'
+      release_tag:
+        description: Publish a GitHub release with this tag (e.g. v25.12.5-1), empty = no release
+        default: ''
 
 permissions:
   contents: write
@@ -112,6 +115,22 @@ jobs:
           cp files/etc/mr70x-build out/BUILDINFO.txt
           (cd out && sha256sum * > sha256sums.txt)
           ls -l out
+          {
+            echo "OpenWrt $OPENWRT_VERSION для **Mercusys MR70X v1** + Xray $XRAY_VERSION (облегчённый) + pbr."
+            echo
+            echo "- \`*-squashfs-factory.bin\` — прошивка из заводского веб-интерфейса Mercusys;"
+            echo "- \`*-squashfs-sysupgrade.bin\` — обновление из OpenWrt (при первой установке — без сохранения настроек)."
+            echo
+            echo "После установки: LuCI → Службы → Xray → вставить \`vless://\` ссылку. Подробности — в [README](https://github.com/${GITHUB_REPOSITORY}#readme)."
+            echo
+            echo "⚠️ На реальном устройстве прошивка ещё не проверялась — перед прошивкой прочитайте раздел README про аварийное восстановление."
+            echo
+            echo '```'
+            cat out/BUILDINFO.txt
+            echo
+            cat out/sha256sums.txt
+            echo '```'
+          } > release-notes.md
 
       - uses: actions/upload-artifact@v4
         with:
@@ -119,8 +138,11 @@ jobs:
           path: out/
 
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           files: out/*
-          body_path: out/BUILDINFO.txt
+          body_path: release-notes.md
