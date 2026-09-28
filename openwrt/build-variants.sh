@@ -81,7 +81,12 @@ while read -r awg apk proton _; do
 
 	rootfs="$(ls -d "$SRC"/build_dir/target-*/root-ramips)"
 	"$REPO/tests/check-symbols.sh" "$rootfs" "$(ls "$SRC"/staging_dir/toolchain-*/bin/*-openwrt-linux-nm | head -n1)"
-	sudo "$REPO/tests/smoke.sh" "$rootfs"
+	# The smoke test runs as root and changes the rootfs: use a copy, so the
+	# build tree stays clean for the next variant.
+	testroot="$(mktemp -d /tmp/smoke-root.XXXXXX)"
+	sudo cp -a "$rootfs/." "$testroot/"
+	sudo "$REPO/tests/smoke.sh" "$testroot"
+	sudo rm -rf --one-file-system "$testroot"
 
 	for f in "$TARGET_DIR"/*-squashfs-factory.bin "$TARGET_DIR"/*-squashfs-sysupgrade.bin "$TARGET_DIR"/*.manifest; do
 		base="$(basename "$f")"
