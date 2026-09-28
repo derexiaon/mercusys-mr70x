@@ -5,5 +5,7 @@
 0 0 0
 # xray-awg-proton: + Proton2025 theme
 1 0 1
-# xray-awg-apk: + apk package manager (no mklibs, less free space)
+# xray-awg-apk: + apk package manager (no mklibs)
 1 1 0
+# xray-awg-proton-apk: everything
+1 1 1
