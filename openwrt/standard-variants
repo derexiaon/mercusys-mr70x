@@ -1,11 +1,11 @@
 # Variants built for releases and pushes: AWG APK PROTON
-# xray-awg: Xray + AmneziaWG (recommended)
-1 0 0
-# xray: Xray only
+# xray: Xray only (recommended)
 0 0 0
-# xray-awg-proton: + Proton2025 theme
+# xray-proton: + Proton2025 theme
+0 0 1
+# xray-awg: + AmneziaWG
+1 0 0
+# xray-awg-proton: + AmneziaWG + Proton2025 theme
 1 0 1
-# xray-awg-apk: + apk package manager (no mklibs)
-1 1 0
 # xray-awg-proton-apk: everything
 1 1 1

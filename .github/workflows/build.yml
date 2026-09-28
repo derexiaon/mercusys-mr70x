@@ -17,7 +17,7 @@ on:
       awg:
         description: AmneziaWG
         type: boolean
-        default: true
+        default: false
       proton:
         description: Тема LuCI Proton2025
         type: boolean
