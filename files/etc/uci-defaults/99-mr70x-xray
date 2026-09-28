@@ -37,9 +37,32 @@ if ! uci -q get firewall.xray >/dev/null; then
 	EOF
 fi
 
+# AmneziaWG: a ready firewall zone for an interface named "awg0"
+# (create it in Network -> Interfaces, protocol AmneziaWG).
+if ! uci -q get firewall.awg >/dev/null; then
+	uci -q batch <<-EOF
+		set firewall.awg=zone
+		set firewall.awg.name='awg'
+		add_list firewall.awg.network='awg0'
+		set firewall.awg.input='REJECT'
+		set firewall.awg.output='ACCEPT'
+		set firewall.awg.forward='REJECT'
+		set firewall.awg.masq='1'
+		set firewall.awg.mtu_fix='1'
+		set firewall.lan_awg=forwarding
+		set firewall.lan_awg.src='lan'
+		set firewall.lan_awg.dest='awg'
+	EOF
+fi
+
+# The firmware has no IPv6 client/server (the tunnels are IPv4 only).
+uci -q delete network.wan6
+
 # Fixed dnsmasq conf-dir: xray init script drops its DNS snippet there.
+# No IPv6 here, so AAAA answers are useless and would bypass the tunnel.
 uci -q batch <<-EOF
 	set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d'
+	set dhcp.@dnsmasq[0].filter_aaaa='1'
 EOF
 
 # Policy-based routing: selected domains / subnets -> xray.
@@ -52,6 +75,7 @@ if ! uci -q get pbr.mr70x_domains >/dev/null; then
 		set pbr.config.strict_enforcement='1'
 		del pbr.config.supported_interface
 		add_list pbr.config.supported_interface='xray'
+		add_list pbr.config.supported_interface='awg0'
 		set pbr.mr70x_server=policy
 		set pbr.mr70x_server.name='Xray server (direct)'
 		set pbr.mr70x_server.interface='wan'
@@ -76,9 +100,12 @@ if ! uci -q get pbr.mr70x_domains >/dev/null; then
 	uci -q reorder pbr.mr70x_server=1
 fi
 
-# Refresh the lists daily (pbr re-downloads them on restart).
+# Daily: refresh the VPN subscription, then the lists (pbr re-downloads
+# them on restart).
 mkdir -p /etc/crontabs
 touch /etc/crontabs/root
+grep -q 'xray-link --update' /etc/crontabs/root || \
+	echo '20 5 * * * /usr/bin/xray-link --update' >> /etc/crontabs/root
 grep -q 'init.d/pbr' /etc/crontabs/root || \
 	echo '30 5 * * * /etc/init.d/pbr restart' >> /etc/crontabs/root
 /etc/init.d/cron enable

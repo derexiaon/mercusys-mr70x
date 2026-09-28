@@ -1,0 +1,9 @@
+vless://b831381d-6324-4d53-ad4f-8cda48b30811@vpn.example.com:443?type=tcp&security=reality&pbk=Z84J2IelR9ch3k8VtlVhhs5ycBUlXA7wHBWcBrjqnAw&sid=6ba85179e30d4fc2&sni=www.microsoft.com&fp=chrome&flow=xtls-rprx-vision#%F0%9F%87%B3%F0%9F%87%B1%20Netherlands
+hysteria2://pa%3Ass@hy.example.com:443,20000-30000/?sni=hy.example.com&obfs=salamander&obfs-password=obfspw#Hy2
+hy2://secret@5.6.7.8:8443?insecure=1#insecure without pin
+trojan://pass@tr.example.com:443?type=ws&path=%2Ftrws&host=tr.example.com&sni=tr.example.com#Trojan WS
+ss://MjAyMi1ibGFrZTMtYWVzLTEyOC1nY206QUFBQUFBQUFBQUFBQUFBQUFBQUFBQT09@1.2.3.4:8388#SS2022
+ss://YWVzLTI1Ni1nY206cGFzc3dvcmRAMTAuMC4wLjE6ODM4OA#legacy ss
+vless://b831381d-6324-4d53-ad4f-8cda48b30811@1.2.3.4:443?type=grpc&security=tls#grpc
+vmess://eyJhZGQiOiIxIn0=
+vless://b831381d-6324-4d53-ad4f-8cda48b30811@xh.example.com:443?type=xhttp&security=tls&sni=xh.example.com&path=%2Fx&mode=packet-up#XHTTP

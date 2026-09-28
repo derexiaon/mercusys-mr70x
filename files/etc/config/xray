@@ -2,12 +2,18 @@
 config xray 'main'
 	option enabled '1'
 	option config '/etc/xray/config.json'
+	# VPN subscription URL (or set it in LuCI: Services -> Xray)
+	#option subscription 'https://panel.example.com/sub/...'
+	# 'auto' = fastest alive server, or the name of one server
+	option server 'auto'
+	option max_servers '10'
+	#option sub_user_agent 'v2rayN/7.0'
 	# Resolve all DNS through the tunnel (dnsmasq -> 127.0.0.1#dns_port -> xray)
 	option dns_tunnel '1'
 	option dns_port '5353'
 	# Upstream DNS used inside the tunnel
 	option upstream_dns '1.1.1.1'
-	# Used directly (not through the tunnel) for the VPN server name and NTP
+	# Used directly (not through the tunnel) for VPN server names, the subscription and NTP
 	option bootstrap_dns '77.88.8.8'
 	# Go runtime soft memory limit (router has 128 MB RAM)
 	option memlimit '40MiB'

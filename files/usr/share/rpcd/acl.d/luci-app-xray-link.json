@@ -3,12 +3,14 @@
 		"description": "Grant access to Xray link setup",
 		"read": {
 			"file": {
-				"/etc/xray/link": [ "read" ],
+				"/etc/xray/links": [ "read" ],
+				"/etc/xray/servers": [ "read" ],
 				"/etc/init.d/xray": [ "exec" ],
 				"/etc/init.d/xray status": [ "exec" ],
 				"/sbin/logread": [ "exec" ],
 				"/sbin/logread -e xray -l 50": [ "exec" ]
-			}
+			},
+			"uci": [ "xray" ]
 		},
 		"write": {
 			"file": {
@@ -17,7 +19,8 @@
 				"/etc/init.d/xray *": [ "exec" ],
 				"/etc/init.d/pbr": [ "exec" ],
 				"/etc/init.d/pbr restart": [ "exec" ]
-			}
+			},
+			"uci": [ "xray" ]
 		}
 	}
 }
