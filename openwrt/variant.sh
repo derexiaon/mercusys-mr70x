@@ -27,6 +27,7 @@ official)
 		# CONFIG_MAKE_TOOLCHAIN is not set
 		# CONFIG_AUTOREMOVE is not set
 		# CONFIG_JSON_CYCLONEDX_SBOM is not set
+		# CONFIG_SDK_LLVM_BPF is not set
 		# CONFIG_PACKAGE_luci is not set
 		# CONFIG_PACKAGE_luci-ssl is not set
 		# CONFIG_PACKAGE_px5g-mbedtls is not set
