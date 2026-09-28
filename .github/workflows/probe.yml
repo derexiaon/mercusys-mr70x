@@ -1,0 +1,52 @@
+name: probe
+on:
+  push:
+    paths: ['.github/workflows/probe.yml']
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Clone xray
+        run: |
+          git clone --depth 1 -b v26.3.27 https://github.com/XTLS/Xray-core.git xray
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: xray/go.mod
+          cache: false
+      - name: Inspect sources
+        working-directory: xray
+        run: |
+          echo '=== all.go'; cat main/distro/all/all.go
+          echo '=== infra/conf ls'; ls infra/conf
+          echo '=== xray.go loaders'; grep -n 'func() interface{}\|ConfigLoader\|import\|"github' infra/conf/xray.go
+          echo '=== transport_internet imports'; sed -n '1,60p' infra/conf/transport_internet.go
+          echo '=== grep heavy imports in infra/conf'; grep -rn 'wireguard\|hysteria\|kcp\|grpc\|quic\|gvisor\|/tun"\|commander\|observatory\|vmess\|trojan\|shadowsocks' infra/conf/*.go | grep -v _test | grep import -A0 || true
+          grep -rln 'gvisor\|quic-go\|google.golang.org/grpc' --include=*.go . | grep -v _test | sort
+          echo '=== main/json'; cat main/json/json.go | head -60
+          echo '=== main.go'; cat main/main.go | head -60
+      - name: Build full
+        working-directory: xray
+        env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
+        run: |
+          go build -trimpath -ldflags '-s -w -buildid=' -o /tmp/xray-full ./main
+          ls -l /tmp/xray-full; xz -9e -k -c /tmp/xray-full | wc -c
+      - name: Deps weight
+        working-directory: xray
+        env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
+        run: |
+          go list -deps ./main | grep -v '^[a-z]*$' | awk -F/ '{print $1"/"$2"/"$3}' | sort | uniq -c | sort -rn | head -40
+      - name: ImageBuilder probe
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools zstd >/dev/null
+          B=https://downloads.openwrt.org/releases/25.12.5/targets/ramips/mt7621
+          wget -q $B/sha256sums; grep -i 'imagebuilder\|mercusys' sha256sums
+          IB=$(grep -o 'openwrt-imagebuilder-[^ ]*' sha256sums | head -1); echo $IB
+          wget -q $B/$IB; tar xf $IB; cd ${IB%.tar.*}
+          make info | grep -A3 -i mr70x
+          make info | grep -i 'Default Packages'
+          make image PROFILE=mercusys_mr70x-v1 PACKAGES='luci' >/dev/null 2>&1 || true
+          ls -l bin/targets/ramips/mt7621/
+          make image PROFILE=mercusys_mr70x-v1 PACKAGES='luci -dnsmasq dnsmasq-full pbr luci-app-pbr kmod-tun curl' 2>&1 | tail -20
+          ls -l bin/targets/ramips/mt7621/
+          ls packages repositories* 2>/dev/null | head; cat repositories 2>/dev/null || cat repositories.conf
