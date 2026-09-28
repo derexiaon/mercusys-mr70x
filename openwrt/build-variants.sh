@@ -43,7 +43,15 @@ while read -r awg apk proton _; do
 	name="$(sh "$HERE/variant.sh" name "$awg" "$apk" "$proton")"
 	echo "::group::variant $name"
 
-	sh "$HERE/variant.sh" base "$awg" "$apk" "$proton" > .config
+	: > .config
+	if [ "$apk" = 1 ]; then
+		# the official kernel config, see variant.sh
+		[ -s official.config ] || curl -fsSL -o official.config \
+			"https://downloads.openwrt.org/releases/$VERSION/targets/ramips/mt7621/config.buildinfo"
+		cat official.config >> .config
+		sh "$HERE/variant.sh" official >> .config
+	fi
+	sh "$HERE/variant.sh" base "$awg" "$apk" "$proton" >> .config
 	sh "$HERE/variant.sh" config "$awg" "$apk" "$proton" >> .config
 	make defconfig >/dev/null
 
