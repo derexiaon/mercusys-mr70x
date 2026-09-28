@@ -16,15 +16,31 @@ jobs:
           cache: false
       - name: Build slim
         run: bash xray-slim/build.sh v26.3.27 /tmp/xray 2>&1 | tail -30
+      - name: Show serial loader
+        run: |
+          ls xray-src/infra/conf/serial
+          grep -n 'yaml\|toml\|^func\|^import\|^\t"' xray-src/infra/conf/serial/*.go | grep -v _test
+          grep -rn 'serial\.\(Decode\|Load\)' --include=*.go xray-src | grep -v _test | grep -v '^xray-src/infra/conf/serial/'
+      - name: Test configs under qemu
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static >/dev/null
+          mkdir t && cd t
+          cat > reality.json <<'EOF'
+          {"log":{"loglevel":"warning"},"inbounds":[{"tag":"tun-in","protocol":"tun","settings":{"name":"xray0","MTU":1500}},{"tag":"dns-in","listen":"127.0.0.1","port":5353,"protocol":"dokodemo-door","settings":{"address":"1.1.1.1","port":53,"network":"tcp,udp"}}],"outbounds":[{"tag":"proxy","protocol":"vless","settings":{"address":"example.com","port":443,"id":"b831381d-6324-4d53-ad4f-8cda48b30811","encryption":"none","flow":"xtls-rprx-vision"},"streamSettings":{"network":"raw","security":"reality","realitySettings":{"serverName":"www.microsoft.com","fingerprint":"chrome","publicKey":"Z84J2IelR9ch3k8VtlVhhs5ycBUlXA7wHBWcBrjqnAw","shortId":"6ba85179e30d4fc2"}}},{"tag":"direct","protocol":"freedom"},{"tag":"block","protocol":"blackhole"}]}
+          EOF
+          cat > xhttp.json <<'EOF'
+          {"inbounds":[{"tag":"tun-in","protocol":"tun","settings":{"name":"xray0"}}],"outbounds":[{"tag":"proxy","protocol":"vless","settings":{"address":"1.2.3.4","port":443,"id":"b831381d-6324-4d53-ad4f-8cda48b30811","encryption":"none"},"streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"cdn.example.com","fingerprint":"chrome","alpn":["h2"]},"xhttpSettings":{"path":"/x","mode":"auto","host":"cdn.example.com"}}}]}
+          EOF
+          cat > vmess.json <<'EOF'
+          {"outbounds":[{"protocol":"vmess","settings":{}}]}
+          EOF
+          for c in reality xhttp vmess; do echo "== $c"; qemu-mipsel-static /tmp/xray run -test -c $c.json; echo "exit=$?"; done
+          qemu-mipsel-static /tmp/xray version
       - name: Analyse
         working-directory: xray-src
         env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
         run: |
           go build -trimpath -o /tmp/xray-dbg ./main
-          go tool nm -size -sort size /tmp/xray-dbg > /tmp/nm.txt
-          echo '=== size by package (top 60)'
-          awk '{sz=$2; name=$4; sub(/\(.*$/, "", name); n=split(name, a, "."); pkg=a[1]; for(i=2;i<n;i++){ if (a[i] ~ /^[a-z0-9_\/-]+$/ && a[i] !~ /^func[0-9]/) pkg=pkg"."a[i]; else break }; sub(/\.[^\/]*$/, "", pkg); s[pkg]+=sz} END {for (p in s) printf "%10d %s\n", s[p], p}' /tmp/nm.txt | sort -rn | head -60
-          echo '=== by module'
-          awk '{sz=$2; name=$4; if (name ~ /^(github\.com|golang\.org|google\.golang\.org|gvisor\.dev|go4\.org|lukechampine\.com|gopkg\.in)\//) { split(name, a, "/"); m=a[1]"/"a[2]"/"a[3] } else { m="std:" name; sub(/[\.\/].*/, "", m) }; sub(/\..*$/, "", m); s[m]+=sz} END {for (p in s) printf "%10d %s\n", s[p], p}' /tmp/nm.txt | sort -rn | head -40
-          echo '=== who imports grpc / yaml / toml / wireguard'
-          go list -deps -f '{{.ImportPath}}: {{join .Imports " "}}' ./main | grep -E 'google.golang.org/grpc[" ]|google.golang.org/grpc$|ghodss/yaml|go-toml|wireguard|sing-shadowsocks|app/commander' | grep -v '^google.golang.org/grpc' | cut -c1-300
+          go tool nm -size -sort size /tmp/xray-dbg | awk '$3 != "B" && $3 != "b"' > /tmp/nm.txt
+          awk '{sz=$2; name=$4; sub(/\(.*$/, "", name); n=split(name, a, "."); pkg=a[1]; for(i=2;i<n;i++){ if (a[i] ~ /^[a-z0-9_\/-]+$/ && a[i] !~ /^func[0-9]/) pkg=pkg"."a[i]; else break }; sub(/\.[^\/]*$/, "", pkg); s[pkg]+=sz} END {for (p in s) printf "%10d %s\n", s[p], p}' /tmp/nm.txt | sort -rn > /tmp/pk.txt || true
+          head -80 /tmp/pk.txt

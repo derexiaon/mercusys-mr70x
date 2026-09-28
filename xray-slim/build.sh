@@ -17,7 +17,8 @@ cp "$HERE/all.go" main/distro/all/all.go
 # 2. Drop JSON loaders that drag in gRPC, WireGuard/gVisor, Hysteria, etc.
 #    and replace their types with stubs returning a clear error.
 rm -f infra/conf/vmess.go infra/conf/trojan.go infra/conf/shadowsocks.go \
-      infra/conf/wireguard.go infra/conf/hysteria.go infra/conf/grpc.go
+      infra/conf/wireguard.go infra/conf/hysteria.go infra/conf/grpc.go \
+      infra/conf/api.go infra/conf/metrics.go
 rm -f infra/conf/*_test.go
 cp "$HERE/stubs.go" infra/conf/zz_slim_stubs.go
 if [ -f "$HERE/patch.sh" ]; then

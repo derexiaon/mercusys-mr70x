@@ -60,3 +60,12 @@ func (*HysteriaClientConfig) Build() (proto.Message, error) { return slimUnsuppo
 type GRPCConfig struct{}
 
 func (*GRPCConfig) Build() (proto.Message, error) { return slimUnsupported("grpc transport") }
+
+// "api" (gRPC commander) and "metrics" (pprof/expvar HTTP server).
+type APIConfig struct{}
+
+func (*APIConfig) Build() (proto.Message, error) { return slimUnsupported("api") }
+
+type MetricsConfig struct{}
+
+func (*MetricsConfig) Build() (proto.Message, error) { return slimUnsupported("metrics") }
