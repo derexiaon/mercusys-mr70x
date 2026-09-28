@@ -4,7 +4,7 @@ on:
   push:
     branches: ['**']
     tags: ['v*']
-    paths-ignore: ['**.md', 'docs/**', '.github/workflows/probe.yml']
+    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
     inputs:
       openwrt_version:
@@ -41,7 +41,8 @@ jobs:
 
       - name: Build slim Xray (mipsle softfloat)
         run: |
-          bash xray-slim/build.sh "$XRAY_VERSION" files/usr/bin/xray
+          set -o pipefail
+          bash xray-slim/build.sh "$XRAY_VERSION" files/usr/bin/xray | tee -a "$GITHUB_STEP_SUMMARY"
           file files/usr/bin/xray
 
       - name: Install ImageBuilder dependencies
@@ -102,6 +103,7 @@ jobs:
             echo "grpc link must be rejected"; exit 1
           fi
           run 'uci show pbr; uci show network.xray; uci show firewall.xray; cat /etc/crontabs/root'
+          run '[ "$(uci get network.xray.proto)" = static ] && [ "$(uci get pbr.@policy[0].name)" = "Xray server (direct)" ]'
 
       - name: Collect
         run: |

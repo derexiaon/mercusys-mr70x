@@ -8,12 +8,15 @@ uci -q batch <<-EOF
 	set luci.main.lang='ru'
 EOF
 
-# netifd interface on top of the TUN device created by xray.
+# netifd interface on top of the TUN device created by xray. The address
+# matters: pbr uses it as the gateway of interfaces without one.
 if ! uci -q get network.xray >/dev/null; then
 	uci -q batch <<-EOF
 		set network.xray=interface
-		set network.xray.proto='none'
+		set network.xray.proto='static'
 		set network.xray.device='xray0'
+		set network.xray.ipaddr='172.19.0.1'
+		set network.xray.netmask='255.255.255.252'
 	EOF
 fi
 
