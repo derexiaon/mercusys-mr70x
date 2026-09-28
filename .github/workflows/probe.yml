@@ -6,47 +6,37 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-24.04
+    env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
     steps:
       - name: Clone xray
-        run: |
-          git clone --depth 1 -b v26.3.27 https://github.com/XTLS/Xray-core.git xray
+        run: git clone --depth 1 -b v26.3.27 https://github.com/XTLS/Xray-core.git xray
       - uses: actions/setup-go@v5
         with:
           go-version-file: xray/go.mod
           cache: false
-      - name: Inspect sources
+      - name: Variants (lower bound, pb config only)
         working-directory: xray
         run: |
-          echo '=== all.go'; cat main/distro/all/all.go
-          echo '=== infra/conf ls'; ls infra/conf
-          echo '=== xray.go loaders'; grep -n 'func() interface{}\|ConfigLoader\|import\|"github' infra/conf/xray.go
-          echo '=== transport_internet imports'; sed -n '1,60p' infra/conf/transport_internet.go
-          echo '=== grep heavy imports in infra/conf'; grep -rn 'wireguard\|hysteria\|kcp\|grpc\|quic\|gvisor\|/tun"\|commander\|observatory\|vmess\|trojan\|shadowsocks' infra/conf/*.go | grep -v _test | grep import -A0 || true
-          grep -rln 'gvisor\|quic-go\|google.golang.org/grpc' --include=*.go . | grep -v _test | sort
-          echo '=== main/json'; cat main/json/json.go | head -60
-          echo '=== main.go'; cat main/main.go | head -60
-      - name: Build full
+          base='app/dispatcher app/proxyman/inbound app/proxyman/outbound app/log app/policy app/router transport/internet/tagged/taggedimpl proxy/blackhole proxy/dns proxy/dokodemo proxy/freedom proxy/socks proxy/vless/outbound transport/internet/tcp transport/internet/tls transport/internet/reality transport/internet/udp transport/internet/websocket transport/internet/httpupgrade transport/internet/headers/noop'
+          build() {
+            name=$1; shift
+            { echo 'package all'; echo 'import ('; for p in "$@"; do echo "  _ \"github.com/xtls/xray-core/$p\""; done; echo ')'; } > main/distro/all/all.go
+            go build -trimpath -ldflags '-s -w -buildid=' -o /tmp/x ./main 2>&1 | tail -5
+            echo "$name: $(stat -c %s /tmp/x) raw, $(xz -9e -c /tmp/x | wc -c) xz"
+          }
+          build base $base
+          build base+tun $base proxy/tun
+          build base+xhttp $base transport/internet/splithttp
+          build base+tun+xhttp $base proxy/tun transport/internet/splithttp
+          build base+tun+xhttp+dns $base proxy/tun transport/internet/splithttp app/dns
+          build base+tun+xhttp+json $base proxy/tun transport/internet/splithttp main/json
+          git checkout main/distro/all/all.go
+      - name: Compile errors after removing heavy infra/conf files
         working-directory: xray
-        env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
         run: |
-          go build -trimpath -ldflags '-s -w -buildid=' -o /tmp/xray-full ./main
-          ls -l /tmp/xray-full; xz -9e -k -c /tmp/xray-full | wc -c
-      - name: Deps weight
-        working-directory: xray
-        env: {CGO_ENABLED: '0', GOOS: linux, GOARCH: mipsle, GOMIPS: softfloat}
-        run: |
-          go list -deps ./main | grep -v '^[a-z]*$' | awk -F/ '{print $1"/"$2"/"$3}' | sort | uniq -c | sort -rn | head -40
-      - name: ImageBuilder probe
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools zstd >/dev/null
-          B=https://downloads.openwrt.org/releases/25.12.5/targets/ramips/mt7621
-          wget -q $B/sha256sums; grep -i 'imagebuilder\|mercusys' sha256sums
-          IB=$(grep -o 'openwrt-imagebuilder-[^ ]*' sha256sums | head -1); echo $IB
-          wget -q $B/$IB; tar xf $IB; cd ${IB%.tar.*}
-          make info | grep -A3 -i mr70x
-          make info | grep -i 'Default Packages'
-          make image PROFILE=mercusys_mr70x-v1 PACKAGES='luci' >/dev/null 2>&1 || true
-          ls -l bin/targets/ramips/mt7621/
-          make image PROFILE=mercusys_mr70x-v1 PACKAGES='luci -dnsmasq dnsmasq-full pbr luci-app-pbr kmod-tun curl' 2>&1 | tail -20
-          ls -l bin/targets/ramips/mt7621/
-          ls packages repositories* 2>/dev/null | head; cat repositories 2>/dev/null || cat repositories.conf
+          cd infra/conf
+          rm -f wireguard.go hysteria.go vmess.go trojan.go shadowsocks.go grpc.go api.go metrics.go observatory.go fakedns.go *_test.go
+          go build . 2>&1 | head -100 || true
+          echo '=== xray.go Config struct'; grep -n 'json:"' xray.go | head -60
+          echo '=== transport_internet refs'; grep -n 'hysteria\.\|kcp\.\|GRPC\|Hysteria\|KCP' transport_internet.go | head -60
+          echo '=== dns.go imports'; sed -n '1,30p' dns.go
