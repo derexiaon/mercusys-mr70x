@@ -123,6 +123,9 @@ jobs:
           echo "sysupgrade: $size bytes, limit $FIRMWARE_LIMIT, free for overlay: $(( (FIRMWARE_LIMIT - size) / 1024 )) KiB" | tee -a "$GITHUB_STEP_SUMMARY"
           [ "$size" -lt "$FIRMWARE_LIMIT" ]
 
+      - name: Check library symbols (mklibs)
+        run: tests/check-symbols.sh "$(ls -d src/build_dir/target-*/root-ramips)" "$(ls src/staging_dir/toolchain-*/bin/*-gcc-nm)"
+
       - name: Smoke test in the built rootfs (qemu chroot)
         run: sudo tests/smoke.sh "$(ls -d src/build_dir/target-*/root-ramips)"
 
