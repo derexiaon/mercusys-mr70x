@@ -23,8 +23,17 @@ run 'touch /etc/config/network'
 run '. /etc/uci-defaults/99-mr70x-xray'
 check '[ "$(uci get network.xray.proto)" = static ]' 'xray interface'
 check '[ "$(uci get pbr.@policy[0].name)" = "Xray server (direct)" ]' 'server policy is first'
-check 'uci get pbr.config.supported_interface | grep -q awg0' 'awg0 supported by pbr'
-check '[ "$(uci get firewall.awg.network)" = awg0 ]' 'awg firewall zone'
+if [ -x "$R/usr/bin/awg" ]; then
+	check 'uci get pbr.config.supported_interface | grep -q awg0' 'awg0 supported by pbr'
+	check '[ "$(uci get firewall.awg.network)" = awg0 ]' 'awg firewall zone'
+	check 'awg --version | grep -q amneziawg' 'awg tool runs'
+	check 'ls /lib/modules/*/amneziawg.ko' 'amneziawg kernel module'
+else
+	check '! uci -q get firewall.awg' 'no awg zone without AmneziaWG'
+fi
+if [ -d "$R/www/luci-static/proton2025" ]; then
+	check '[ "$(uci get luci.main.mediaurlbase)" = /luci-static/proton2025 ]' 'Proton2025 is the default theme'
+fi
 check '[ "$(uci get dhcp.@dnsmasq[0].filter_aaaa)" = 1 ]' 'AAAA filtered'
 check 'grep -q "xray-link --update" /etc/crontabs/root' 'subscription cron'
 

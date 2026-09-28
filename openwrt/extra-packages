@@ -1,0 +1,2 @@
+# Extra packages cloned into package/ of the OpenWrt tree: NAME URL COMMIT
+luci-theme-proton2025 https://github.com/ChesterGoodiny/luci-theme-proton2025.git 933b22b7d8b49df65256860cb376668002aa722d

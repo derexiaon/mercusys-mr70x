@@ -8,6 +8,9 @@ uci -q batch <<-EOF
 	set luci.main.lang='ru'
 EOF
 
+# Proton2025 theme (firmware variants with "proton") becomes the default one.
+[ -d /www/luci-static/proton2025 ] && uci -q set luci.main.mediaurlbase='/luci-static/proton2025'
+
 # netifd interface on top of the TUN device created by xray. The address
 # matters: pbr uses it as the gateway of interfaces without one.
 if ! uci -q get network.xray >/dev/null; then
@@ -37,9 +40,11 @@ if ! uci -q get firewall.xray >/dev/null; then
 	EOF
 fi
 
-# AmneziaWG: a ready firewall zone for an interface named "awg0"
-# (create it in Network -> Interfaces, protocol AmneziaWG).
-if ! uci -q get firewall.awg >/dev/null; then
+# AmneziaWG (firmware variants with "awg"): a ready firewall zone for an
+# interface named "awg0" (create it in Network -> Interfaces, protocol AmneziaWG).
+HAVE_AWG=0
+[ -x /usr/bin/awg ] && HAVE_AWG=1
+if [ "$HAVE_AWG" = 1 ] && ! uci -q get firewall.awg >/dev/null; then
 	uci -q batch <<-EOF
 		set firewall.awg=zone
 		set firewall.awg.name='awg'
@@ -75,7 +80,6 @@ if ! uci -q get pbr.mr70x_domains >/dev/null; then
 		set pbr.config.strict_enforcement='1'
 		del pbr.config.supported_interface
 		add_list pbr.config.supported_interface='xray'
-		add_list pbr.config.supported_interface='awg0'
 		set pbr.mr70x_server=policy
 		set pbr.mr70x_server.name='Xray server (direct)'
 		set pbr.mr70x_server.interface='wan'
@@ -98,6 +102,7 @@ if ! uci -q get pbr.mr70x_domains >/dev/null; then
 	EOF
 	# Server exception must be evaluated before the other policies.
 	uci -q reorder pbr.mr70x_server=1
+	[ "$HAVE_AWG" = 1 ] && uci -q add_list pbr.config.supported_interface='awg0'
 fi
 
 # Daily: refresh the VPN subscription, then the lists (pbr re-downloads
