@@ -28,6 +28,10 @@ require() {
 	done
 }
 
+vermagic() {
+	python3 -c 'import json, sys; print(json.load(sys.stdin)["linux_kernel"]["vermagic"])'
+}
+
 failed=0
 {
 	echo "| Вариант | AmneziaWG | apk | Proton | Размер прошивки | Свободно под настройки |"
@@ -39,7 +43,7 @@ while read -r awg apk proton _; do
 	name="$(sh "$HERE/variant.sh" name "$awg" "$apk" "$proton")"
 	echo "::group::variant $name"
 
-	cp "$HERE/diffconfig" .config
+	sh "$HERE/variant.sh" base "$awg" "$apk" "$proton" > .config
 	sh "$HERE/variant.sh" config "$awg" "$apk" "$proton" >> .config
 	make defconfig >/dev/null
 
@@ -49,7 +53,8 @@ while read -r awg apk proton _; do
 	[ "$awg" = 1 ] && require CONFIG_PACKAGE_kmod-amneziawg=y CONFIG_PACKAGE_luci-proto-amneziawg=y
 	[ "$proton" = 1 ] && require CONFIG_PACKAGE_luci-theme-proton2025=y
 	if [ "$apk" = 1 ]; then
-		require CONFIG_PACKAGE_apk-mbedtls=y CONFIG_PACKAGE_luci-app-package-manager=y '# CONFIG_USE_MKLIBS is not set'
+		require CONFIG_PACKAGE_apk-mbedtls=y CONFIG_PACKAGE_luci-app-package-manager=y '# CONFIG_USE_MKLIBS is not set' \
+			CONFIG_ALL_KMODS=y CONFIG_COLLECT_KERNEL_DEBUG=y
 	else
 		require '# CONFIG_PACKAGE_apk-mbedtls is not set' CONFIG_USE_MKLIBS=y
 	fi
@@ -62,6 +67,17 @@ while read -r awg apk proton _; do
 		make -j1 V=s 2>&1 | tail -200
 		echo "::endgroup::"
 		exit 1
+	fi
+
+	if [ "$apk" = 1 ]; then
+		# official kmod-* packages only install into the official kernel
+		ours="$(vermagic < "$TARGET_DIR/profiles.json")"
+		official="$(curl -fsSL "https://downloads.openwrt.org/releases/$VERSION/targets/ramips/mt7621/profiles.json" | vermagic)"
+		echo "$name: kernel vermagic $ours, official $official"
+		if [ -z "$ours" ] || [ "$ours" != "$official" ]; then
+			echo "::error::$name: kernel differs from the official one ($ours != $official), official kmod-* packages would not install"
+			exit 1
+		fi
 	fi
 
 	sysupgrade="$(ls "$TARGET_DIR"/*-squashfs-sysupgrade.bin)"

@@ -8,9 +8,14 @@ CONFIG_TARGET_ramips_mt7621_DEVICE_mercusys_mr70x-v1=y
 # --- Image size tuning -------------------------------------------------------
 # Bigger squashfs blocks compress noticeably better (default is 256 KiB).
 CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=1024
+# CONFIG_KERNEL_KALLSYMS is not set
+# CONFIG_BUILD_LOG is not set
+
+# >>> slim-kernel: left out by variants with apk (openwrt/build-variants.sh) --
 # Drop unused symbols from shared libraries (packages are fixed at build time).
 CONFIG_USE_MKLIBS=y
-# CONFIG_KERNEL_KALLSYMS is not set
+# Kernel without debug features (-150 KB). Official kmod-* packages are built
+# for the official kernel config, so they do not load into this kernel.
 # CONFIG_KERNEL_CRASHLOG is not set
 # CONFIG_KERNEL_SWAP is not set
 # CONFIG_KERNEL_DEBUG_FS is not set
@@ -26,7 +31,7 @@ CONFIG_USE_MKLIBS=y
 # CONFIG_KERNEL_AIO is not set
 # CONFIG_KERNEL_FHANDLE is not set
 # CONFIG_COLLECT_KERNEL_DEBUG is not set
-# CONFIG_BUILD_LOG is not set
+# <<< slim-kernel ---------------------------------------------------------------
 
 # No package manager: there is no room to install anything anyway.
 # CONFIG_PACKAGE_apk-mbedtls is not set
