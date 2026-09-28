@@ -124,7 +124,7 @@ jobs:
           [ "$size" -lt "$FIRMWARE_LIMIT" ]
 
       - name: Check library symbols (mklibs)
-        run: tests/check-symbols.sh "$(ls -d src/build_dir/target-*/root-ramips)" "$(ls src/staging_dir/toolchain-*/bin/*-gcc-nm)"
+        run: tests/check-symbols.sh "$(ls -d src/build_dir/target-*/root-ramips)" "$(ls src/staging_dir/toolchain-*/bin/*-openwrt-linux-nm | head -n1)"
 
       - name: Smoke test in the built rootfs (qemu chroot)
         run: sudo tests/smoke.sh "$(ls -d src/build_dir/target-*/root-ramips)"

@@ -7,7 +7,7 @@
 set -euo pipefail
 
 R="$(realpath "${1:?rootfs dir}")"
-NM="${2:?path to the target nm}"
+NM="$(realpath "${2:?path to the target nm}")"
 cd "$R"
 
 mapfile -t elfs < <(find bin sbin usr lib -type f -exec sh -c 'head -c4 "$1" | grep -q ELF && echo "$1"' _ {} \;)
