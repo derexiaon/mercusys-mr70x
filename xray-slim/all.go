@@ -1,8 +1,9 @@
 package all
 
 // Slim feature set for Mercusys MR70X (MT7621, 16 MB flash, 128 MB RAM).
-// Client-side only: VLESS (+XTLS Vision) over RAW/TCP, XHTTP, WebSocket,
-// HTTPUpgrade with TLS or REALITY; TUN / tunnel(dokodemo) / SOCKS inbounds.
+// Client-side only: VLESS (+XTLS Vision), Trojan, Shadowsocks (incl. 2022)
+// over RAW/TCP, XHTTP, WebSocket, HTTPUpgrade with TLS or REALITY; Hysteria2;
+// TUN / tunnel(dokodemo) / SOCKS inbounds.
 
 import (
 	// Mandatory features.
@@ -26,12 +27,17 @@ import (
 	_ "github.com/xtls/xray-core/proxy/dokodemo"
 	_ "github.com/xtls/xray-core/proxy/freedom"
 	_ "github.com/xtls/xray-core/proxy/http"
+	_ "github.com/xtls/xray-core/proxy/hysteria"
+	_ "github.com/xtls/xray-core/proxy/shadowsocks"
+	_ "github.com/xtls/xray-core/proxy/shadowsocks_2022"
 	_ "github.com/xtls/xray-core/proxy/socks"
+	_ "github.com/xtls/xray-core/proxy/trojan"
 	_ "github.com/xtls/xray-core/proxy/tun"
 	_ "github.com/xtls/xray-core/proxy/vless/outbound"
 
 	// Transports.
 	_ "github.com/xtls/xray-core/transport/internet/httpupgrade"
+	_ "github.com/xtls/xray-core/transport/internet/hysteria"
 	_ "github.com/xtls/xray-core/transport/internet/reality"
 	_ "github.com/xtls/xray-core/transport/internet/splithttp"
 	_ "github.com/xtls/xray-core/transport/internet/tcp"
