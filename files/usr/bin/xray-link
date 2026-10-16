@@ -6,7 +6,8 @@
 #   xray-link --update                         re-download the subscription, apply if changed
 #   xray-link --apply                          rebuild the config from saved links/subscription
 #   xray-link --show                           print links, subscription and servers
-#   xray-link --set LINKS SUB_URL SERVER       used by LuCI (LINKS: one per line)
+#   xray-link --hwid [--new]                   print (or regenerate) the HWID sent with the subscription
+#   xray-link --set LINKS SUB_URL SERVER [HWID] used by LuCI (LINKS: one per line, HWID: 1/0)
 #
 # Links: vless://, trojan://, ss://, hysteria2:// (hy2://). Several servers:
 # Xray probes them and uses the fastest alive one (option server=auto).
@@ -36,12 +37,39 @@ save_links() {
 	mv "$LINKS_FILE.new" "$LINKS_FILE"
 }
 
+# Device ID for panels that limit devices per subscription (Remnawave, Marzban, HAPP
+# style x-hwid): generated once and kept in /etc/config/xray.
+get_hwid() {
+	local hwid
+	config_get hwid main hwid ''
+	if [ -z "$hwid" ] || [ "$1" = new ]; then
+		hwid="$(tr -d '-' < /proc/sys/kernel/random/uuid)"
+		uci -q set xray.main.hwid="$hwid" && uci -q commit xray
+		config_set main hwid "$hwid"
+	fi
+	echo "$hwid"
+}
+
 # returns 0 if the subscription changed, 2 if unchanged, 1 on error
 fetch_sub() {
-	local url ua tmp
+	local url ua tmp send os ver model
 
 	config_get url main subscription ''
 	config_get ua main sub_user_agent 'v2rayN/7.0'
+	set --
+	config_get_bool send main send_hwid 1
+	if [ "$send" = 1 ]; then
+		config_get os main device_os 'OpenWrt'
+		config_get ver main os_version ''
+		[ -n "$ver" ] || ver="$(. /etc/openwrt_release 2>/dev/null; echo "$DISTRIB_RELEASE")"
+		config_get model main device_model ''
+		[ -n "$model" ] || model="$(cat /tmp/sysinfo/model 2>/dev/null)"
+		set -- --header "x-hwid: $(get_hwid)"
+		# uclient-fetch refuses headers with empty values
+		[ -n "$os" ] && set -- "$@" --header "x-device-os: $os"
+		[ -n "$ver" ] && set -- "$@" --header "x-ver-os: $ver"
+		[ -n "$model" ] && set -- "$@" --header "x-device-model: $model"
+	fi
 
 	if [ -z "$url" ]; then
 		[ -f "$SUB_FILE" ] || return 2
@@ -50,7 +78,7 @@ fetch_sub() {
 	fi
 
 	tmp=/tmp/xray-sub.$$
-	if ! uclient-fetch -q -T 30 -U "$ua" -O "$tmp" "$url" 2>/dev/null || [ ! -s "$tmp" ]; then
+	if ! uclient-fetch -q -T 30 -U "$ua" "$@" -O "$tmp" "$url" 2>/dev/null || [ ! -s "$tmp" ]; then
 		rm -f "$tmp"
 		echo "Не удалось скачать подписку: $url" >&2
 		return 1
@@ -209,16 +237,20 @@ case "$1" in
 	--apply)
 		apply
 		;;
+	--hwid)
+		get_hwid "$([ "$2" = --new ] && echo new)"
+		;;
 	--set)
 		save_links "$2"
 		set_opt subscription "$3"
 		set_opt server "$4"
+		[ -n "$5" ] && set_opt send_hwid "$5"
 		load_opts
 		fetch_sub; [ $? = 1 ] && exit 1
 		apply
 		;;
 	''|-h|--help)
-		sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
 		exit 1
 		;;
 	-*)

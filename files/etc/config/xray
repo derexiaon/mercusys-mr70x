@@ -8,6 +8,14 @@ config xray 'main'
 	option server 'auto'
 	option max_servers '10'
 	#option sub_user_agent 'v2rayN/7.0'
+	# Send a device ID with the subscription request (x-hwid, x-device-os, x-ver-os,
+	# x-device-model headers) for panels with a device limit (Remnawave, Marzban...).
+	# hwid is generated on the first download; 'xray-link --hwid --new' makes a new one.
+	option send_hwid '1'
+	#option hwid ''
+	#option device_os 'OpenWrt'
+	#option os_version ''      # default: OpenWrt release
+	#option device_model ''    # default: /tmp/sysinfo/model
 	# Resolve all DNS through the tunnel (dnsmasq -> 127.0.0.1#dns_port -> xray)
 	option dns_tunnel '1'
 	option dns_port '5353'

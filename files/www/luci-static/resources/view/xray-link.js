@@ -39,7 +39,9 @@ return view.extend({
 		    status = ((data[2] && data[2].stdout) || '').trim() || 'unknown',
 		    log = (data[3] && data[3].stdout) || '',
 		    sub = uci.get('xray', 'main', 'subscription') || '',
-		    selected = uci.get('xray', 'main', 'server') || 'auto';
+		    selected = uci.get('xray', 'main', 'server') || 'auto',
+		    sendHwid = uci.get('xray', 'main', 'send_hwid') !== '0',
+		    hwid = uci.get('xray', 'main', 'hwid') || 'создаётся при первом скачивании подписки';
 
 		var ta = E('textarea', {
 			'class': 'cbi-input-textarea',
@@ -57,6 +59,8 @@ return view.extend({
 			'placeholder': 'https://panel.example.com/sub/...',
 			'value': sub
 		});
+
+		var hwidBox = E('input', { 'type': 'checkbox', 'checked': sendHwid ? '' : null });
 
 		var sel = E('select', { 'class': 'cbi-input-select' }, [
 			E('option', { 'value': 'auto' }, [ 'Автоматически (самый быстрый живой сервер)' ])
@@ -111,13 +115,17 @@ return view.extend({
 			E('div', { 'class': 'cbi-section' }, [
 				E('p', {}, [ E('strong', {}, [ 'Статус: ' ]), status ]),
 				field('Подписка', subInput, 'URL подписки из панели VPN (3x-ui, Marzban, Remnawave…). Можно оставить пустым.'),
+				field('HWID', E('label', {}, [ hwidBox, ' Отправлять с подпиской идентификатор устройства' ]),
+					[ 'Заголовки x-hwid, x-device-os, x-ver-os, x-device-model — для панелей с лимитом устройств (Remnawave, Marzban…). ',
+					  'HWID: ', E('code', {}, [ hwid ]) ]),
 				field('Ссылки', ta, 'Свои серверы, по одной ссылке на строку. Используются вместе с подпиской.'),
 				field('Сервер', sel, 'При нескольких серверах Xray раз в 2 минуты проверяет их и переключается на живой.'),
 				E('div', { 'style': 'margin-top:1em;display:flex;flex-wrap:wrap;gap:.5em' }, [
 					button('cbi-button-apply', 'Сохранить и применить', '/usr/bin/xray-link', function() {
-						return [ '--set', ta.value.trim(), subInput.value.trim(), sel.value ];
+						return [ '--set', ta.value.trim(), subInput.value.trim(), sel.value, hwidBox.checked ? '1' : '0' ];
 					}),
 					button('cbi-button-action', 'Обновить подписку', '/usr/bin/xray-link', [ '--update' ]),
+					button('', 'Новый HWID', '/usr/bin/xray-link', [ '--hwid', '--new' ]),
 					button('cbi-button-action', 'Перезапустить', '/etc/init.d/xray', [ 'restart' ]),
 					button('cbi-button-reset', 'Остановить', '/etc/init.d/xray', [ 'stop' ]),
 					button('', 'Обновить списки сайтов (pbr)', '/etc/init.d/pbr', [ 'restart' ])

@@ -8,9 +8,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PORT=18099
 
 mountpoint -q "$R/proc" || mount -t proc proc "$R/proc"
-python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$HERE/data" >/dev/null 2>&1 &
+HEADERS="$(mktemp)"
+python3 "$HERE/http-server.py" "$PORT" "$HERE/data" "$HEADERS" &
 HTTP=$!
-trap 'kill $HTTP; umount "$R/proc"' EXIT
+trap 'kill $HTTP; umount "$R/proc"; rm -f "$HEADERS"' EXIT
 sleep 1
 
 run() { chroot "$R" /usr/bin/env XRAY_LINK_NO_RESTART=1 /bin/sh -c "$1"; }
@@ -61,6 +62,20 @@ check 'jsonfilter -i /etc/xray/config.json -e "@.outbounds[*].protocol" | sort -
 check '[ "$(jsonfilter -i /etc/xray/config.json -e "@.outbounds[@.protocol=\"hysteria\"].streamSettings.finalmask.quicParams.udpHop.ports")" = 443,20000-30000 ]' 'hysteria2 port hopping'
 check 'uci get pbr.mr70x_server.dest_addr | grep -q hy.example.com' 'servers bypass the tunnel'
 check 'xray-link --update | grep -q "не изменилась"' 'unchanged subscription is not re-applied'
+
+# device ID headers for panels with a device limit
+hwid="$(run 'uci get xray.main.hwid')"
+[[ "$hwid" =~ ^[0-9a-f]{32}$ ]] || { echo "FAIL: hwid '$hwid'"; exit 1; }
+last="$(grep '^/sub.b64' "$HEADERS" | tail -n1)"
+for h in "x-hwid: $hwid" "x-device-os: OpenWrt" "x-ver-os: $(run '. /etc/openwrt_release; echo $DISTRIB_RELEASE')" "user-agent: v2rayN/7.0"; do
+	grep -qF "$h" <<< "$last" || { echo "FAIL: subscription request lacks '$h': $last"; exit 1; }
+done
+echo "ok: HWID headers"
+check '[ "$(xray-link --hwid)" = "$(uci get xray.main.hwid)" ] && [ "$(xray-link --hwid --new)" != '"$hwid"' ]' 'HWID kept, regenerated on request'
+run "xray-link --set '' 'http://127.0.0.1:$PORT/sub.b64' auto 0" >/dev/null
+grep '^/sub.b64' "$HEADERS" | tail -n1 | grep -q 'x-hwid' && { echo "FAIL: x-hwid sent with send_hwid=0"; exit 1; }
+echo "ok: HWID can be turned off"
+run 'uci set xray.main.send_hwid=1; uci commit xray'
 
 # pin one server by name
 run "xray-link --set '' 'http://127.0.0.1:$PORT/sub.b64' 'Trojan WS'"
