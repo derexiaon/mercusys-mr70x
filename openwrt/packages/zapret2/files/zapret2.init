@@ -1,0 +1,150 @@
+#!/bin/sh /etc/rc.common
+# zapret2 (nfqws2) for the hosts in /etc/zapret2/hostlist.txt (mercusys-mr70x).
+#
+# dnsmasq puts the addresses of these hosts into the nft set inet zapret2 direct4
+# (/tmp/dnsmasq.d/00-zapret2.conf). The file is read before pbr's one and dnsmasq
+# keeps one nft set per domain, so these hosts never land in the VPN sets of pbr.
+# Connections of LAN clients to these addresses: the first packets go to nfqws2.
+
+START=21
+STOP=89
+USE_PROCD=1
+
+PROG=/usr/bin/nfqws2
+LUA=/usr/share/zapret2/lua
+HOSTLIST=/etc/zapret2/hostlist.txt
+DNSMASQ_CONF=/tmp/dnsmasq.d/00-zapret2.conf
+NFT_FILE=/var/run/zapret2.nft
+
+hosts() {
+	sed 's/#.*//; s/[[:space:]]//g; /^$/d' "$HOSTLIST" 2>/dev/null | sort -u
+}
+
+dnsmasq_lines() {
+	hosts | sed 's|.*|nftset=/&/4#inet#zapret2#direct4|'
+}
+
+# nfqws2 options from /etc/config/zapret2 (after config_load)
+nfqws_opts() {
+	local qnum mark discord opts=""
+
+	config_get qnum main qnum 200
+	config_get mark main fwmark 0x40000000
+	config_get discord main discord_ports 50000-50099,19294-19344
+
+	profile_opts() {
+		local p
+		p="$(echo "$1" | sed "s|<HOSTLIST>|--hostlist=$HOSTLIST|g; s|<DISCORD_PORTS>|$discord|g")"
+		opts="${opts:+$opts --new }$p"
+	}
+	config_list_foreach main profile profile_opts
+	[ -n "$opts" ] || return 1
+
+	echo "--qnum=$qnum --fwmark=$mark --lua-init=@$LUA/zapret-lib.lua" \
+		"--lua-init=@$LUA/zapret-antidpi.lua --lua-init=@$LUA/zapret-auto.lua $opts"
+}
+
+dnsmasq_set() {
+	local tmp="$DNSMASQ_CONF.tmp"
+
+	mkdir -p "${DNSMASQ_CONF%/*}"
+	if [ "$1" = on ]; then
+		dnsmasq_lines > "$tmp"
+	else
+		: > "$tmp"
+	fi
+	if [ ! -s "$tmp" ]; then
+		rm -f "$tmp"
+		[ -e "$DNSMASQ_CONF" ] || return 0
+		rm -f "$DNSMASQ_CONF"
+	else
+		mv "$tmp" "$DNSMASQ_CONF"
+	fi
+	# also clears the DNS cache, so the set fills up again
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+
+# "80,443" -> "80, 443"
+nft_list() { echo "$1" | sed 's/[[:space:]]//g; s/,/, /g'; }
+
+nft_up() {
+	local lan="$1" qnum="$2" mark="$3" pout="$4" pin="$5" tcp udp q
+
+	tcp="$(nft_list "$6")"
+	udp="$(nft_list "$7${8:+,$8}")"
+	q="queue num $qnum bypass"
+
+	cat > "$NFT_FILE" <<-NFT
+		table inet zapret2
+		delete table inet zapret2
+		table inet zapret2 {
+			set direct4 {
+				type ipv4_addr
+			}
+			chain post {
+				type filter hook postrouting priority srcnat + 1; policy accept;
+				meta mark & $mark != 0 return
+				iifname "$lan" oifname != { "xray0", "awg0" } ip daddr @direct4 tcp dport { $tcp } ct original packets 1-$pout $q
+				iifname "$lan" oifname != { "xray0", "awg0" } ip daddr @direct4 tcp dport { $tcp } tcp flags & (fin | rst) != 0 $q
+				iifname "$lan" oifname != { "xray0", "awg0" } ip daddr @direct4 udp dport { $udp } ct original packets 1-$pout $q
+			}
+			chain pre {
+				type filter hook prerouting priority filter; policy accept;
+				ip saddr @direct4 tcp sport { $tcp } ct reply packets 1-$pin $q
+				ip saddr @direct4 tcp sport { $tcp } tcp flags & (fin | rst) != 0 $q
+				ip saddr @direct4 udp sport { $(nft_list "$7") } ct reply packets 1-$pin $q
+			}
+			chain predefrag {
+				type filter hook output priority -401; policy accept;
+				meta mark & $mark != 0 notrack
+			}
+		}
+	NFT
+	nft -f "$NFT_FILE"
+}
+
+nft_down() {
+	nft delete table inet zapret2 2>/dev/null
+	rm -f "$NFT_FILE"
+}
+
+start_service() {
+	local enabled lan qnum mark pout pin tcp udp discord opts
+
+	config_load zapret2
+	config_get_bool enabled main enabled 1
+	[ "$enabled" = 1 ] || { stop_service; return 0; }
+	config_get lan main lan_device br-lan
+	config_get qnum main qnum 200
+	config_get mark main fwmark 0x40000000
+	config_get pout main packets_out 9
+	config_get pin main packets_in 3
+	config_get tcp main tcp_ports 80,443
+	config_get udp main udp_ports 443
+	config_get discord main discord_ports 50000-50099,19294-19344
+	opts="$(nfqws_opts)" || { echo "zapret2: no profiles in /etc/config/zapret2" >&2; return 1; }
+
+	# "ct original packets" needs conntrack accounting
+	sysctl -q -w net.netfilter.nf_conntrack_acct=1
+
+	nft_up "$lan" "$qnum" "$mark" "$pout" "$pin" "$tcp" "$udp" "$discord" || return 1
+	dnsmasq_set on
+
+	procd_open_instance
+	# word splitting of $opts is intended: one nfqws2 option per word
+	# shellcheck disable=SC2086
+	procd_set_param command "$PROG" $opts
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param respawn
+	procd_close_instance
+}
+
+stop_service() {
+	nft_down
+	dnsmasq_set off
+}
+
+service_triggers() {
+	procd_add_reload_trigger zapret2
+}

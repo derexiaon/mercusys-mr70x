@@ -12,6 +12,9 @@
 - **автовыбор сервера**: при нескольких серверах Xray раз в 2 минуты проверяет их и
   использует самый быстрый живой — если сервер упал, трафик сам переходит на другой;
 - **AmneziaWG** (модуль ядра + LuCI) — если провайдер VPN даёт AWG-конфиг;
+- **zapret2** (варианты `…-zapret`) — YouTube и Discord идут напрямую, без VPN, с обходом
+  DPI (nfqws2): быстрее, чем через туннель, и не нагружают процессор шифрованием;
+- **zram** — 32 МБ сжатого swap в ОЗУ на случай пиков памяти;
 - **pbr** + **luci-app-pbr** — в VPN идут только нужные сайты, по спискам
   [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains)
   («Russia inside» + подсети Telegram, Meta, Twitter, Discord), обновляются каждый день;
@@ -178,6 +181,39 @@ xray-link --show                                      # что настроен�
 Каждый день в 05:20 обновляется подписка, в 05:30 — списки сайтов. Вручную — кнопками
 «Обновить подписку» и «Обновить списки сайтов» на странице Xray.
 
+### zapret2: YouTube и Discord напрямую (варианты `…-zapret`)
+
+Домены из `/etc/zapret2/hostlist.txt` (YouTube, Discord) идут **напрямую**, а первые пакеты
+каждого соединения обрабатывает nfqws2 из [zapret2](https://github.com/bol-van/zapret2),
+чтобы DPI провайдера их не узнал. Через VPN такой трафик не идёт, даже если он есть в
+списке itdoginfo: dnsmasq складывает адреса этих доменов в свой набор `inet zapret2 direct4`,
+а не в набор pbr (подсети Discord в этих вариантах из политики pbr убраны).
+
+- Обрабатывается только трафик клиентов LAN (`br-lan`); собственные соединения роутера, в
+  том числе Xray с VPN-сервером, nfqws2 не трогает.
+- Настройки — `/etc/config/zapret2`, список доменов — `/etc/zapret2/hostlist.txt`, после
+  изменений: `/etc/init.d/zapret2 restart`.
+- Остановить zapret2 (`/etc/init.d/zapret2 stop`) — YouTube и Discord вернутся в VPN по
+  спискам pbr; отключить насовсем — ещё `/etc/init.d/zapret2 disable`.
+
+Стратегия обхода по умолчанию — та, что предлагает автор zapret2 (`fake` + `multidisorder`
+для TLS, `fake` для QUIC и голоса Discord). Работает ли она, зависит от провайдера. Если
+YouTube не открывается, поменяйте первую строку `list profile` в `/etc/config/zapret2`,
+например на
+
+```
+--filter-tcp=443 --filter-l7=tls <HOSTLIST> --payload=tls_client_hello --lua-desync=multisplit:pos=1,midsld
+--filter-tcp=443 --filter-l7=tls <HOSTLIST> --payload=tls_client_hello --lua-desync=fake:blob=fake_default_tls:tcp_md5:repeats=6 --lua-desync=multidisorder:pos=midsld
+```
+
+Подобрать стратегию под провайдера можно скриптом `blockcheck2.sh` из zapret2 на
+компьютере с Linux, подключённом к тому же провайдеру. Проверка на роутере:
+
+```sh
+logread -e nfqws2                      # лог nfqws2
+nft list set inet zapret2 direct4      # адреса YouTube/Discord, которые сейчас обрабатываются
+```
+
 ### Если VPN-сервер недоступен
 
 При нескольких серверах Xray сам переключится на живой. Если не работает ни один —
@@ -214,6 +250,7 @@ logread -e xray                  # лог Xray
 xray-link --show                 # ссылки, подписка, серверы
 /etc/init.d/pbr status           # что делает pbr
 nft list sets inet fw4 | grep pbr   # nft set'ы, которые заполняет pbr
+/etc/init.d/zram status          # zram swap
 ip route show table all | grep -e xray0 -e awg0
 ```
 

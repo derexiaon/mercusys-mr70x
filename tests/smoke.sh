@@ -8,6 +8,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PORT=18099
 
 mountpoint -q "$R/proc" || mount -t proc proc "$R/proc"
+[ -e "$R/dev/urandom" ] || mknod -m 666 "$R/dev/urandom" c 1 9
 TLSPORT=18443
 TMPD="$(mktemp -d)"
 HEADERS="$TMPD/headers"
@@ -51,6 +52,41 @@ process_url "$1"
 EOS
 check "[ \"\$(sh /tmp/pbr-dl.sh https://127.0.0.1:$TLSPORT/list.txt)\" = 'discord.com youtube.com ' ]" 'pbr downloads https lists'
 check '[ -x /etc/init.d/zram ] && [ "$(uci get system.@system[0].zram_size_mb)" = 32 ]' 'zram swap, 32 MB'
+
+if [ -x "$R/etc/init.d/zapret2" ]; then
+	check '[ "$(uci get zapret2.main.enabled)" = 1 ] && [ -s /etc/zapret2/hostlist.txt ]' 'zapret2 config and host list'
+	# the functions of the init script that do not need procd
+	cat > "$R/tmp/zapret2-test.sh" <<'EOS'
+. /lib/functions.sh
+eval "$(sed -n '/^[A-Z_]*=/p; /^hosts()/,/^}/p; /^dnsmasq_lines()/,/^}/p; /^nfqws_opts()/,/^}/p; /^nft_list()/p; /^nft_up() {/,/^}/p' /etc/init.d/zapret2)"
+case "$1" in
+	opts) config_load zapret2; nfqws_opts ;;
+	dnsmasq) dnsmasq_lines ;;
+	nft) NFT_FILE=/tmp/zapret2.nft; nft() { :; }; nft_up br-lan 200 0x40000000 9 3 80,443 443 50000-50099,19294-19344 ;;
+esac
+EOS
+	out="$(run 'nfqws2 --intercept=0 $(sh /tmp/zapret2-test.sh opts) 2>&1')" || true
+	if ! grep -q 'no intercept quit' <<< "$out" || grep -Eqi 'does not exist|unrecognized|lua.*error|cannot|failed to' <<< "$out"; then
+		echo "FAIL: nfqws2 rejects the default profiles:"; echo "$out"; exit 1
+	fi
+	echo "ok: nfqws2 loads the Lua strategies ($(grep -o 'LUA v[0-9.]*' <<< "$out"))"
+	check 'sh /tmp/zapret2-test.sh dnsmasq | grep -qx "nftset=/youtube.com/4#inet#zapret2#direct4"' 'zapret2 hosts go to its nft set'
+	check '! uci get pbr.mr70x_subnets.dest_addr | grep -q discord' 'Discord subnets are not sent to the tunnel'
+	check 'sh /tmp/zapret2-test.sh dnsmasq > /tmp/z.conf && dnsmasq --test --conf-file=/tmp/z.conf 2>&1 | grep -q "syntax check OK"' 'dnsmasq accepts the zapret2 nftset lines'
+	run 'sh /tmp/zapret2-test.sh nft'
+	if command -v nft >/dev/null; then
+		modprobe nft_queue 2>/dev/null || true
+		if nft_out="$(nft -c -f "$R/tmp/zapret2.nft" 2>&1)"; then
+			echo "ok: nft accepts the zapret2 table"
+		elif [ ! -d /sys/module/nft_queue ] && ! grep -v 'queue num\|\^' <<< "$nft_out" | grep -qv 'Could not process rule: No such file or directory'; then
+			echo "skip: nft check, this kernel has no nft_queue"
+		else
+			echo "FAIL: nft rejects the zapret2 table:"; echo "$nft_out"; exit 1
+		fi
+	fi
+else
+	check 'uci get pbr.mr70x_subnets.dest_addr | grep -q discord' 'Discord subnets through the tunnel'
+fi
 
 # start from a clean state (no subscription, no saved links)
 run 'uci -q delete xray.main.subscription; uci -q delete xray.main.server; uci commit xray; rm -f /etc/xray/subscription /etc/xray/links'

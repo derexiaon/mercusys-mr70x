@@ -1,6 +1,6 @@
 #!/bin/sh
 # Print the variant name and the extra config lines for a firmware variant.
-# Usage: openwrt/variant.sh official|base|config|name AWG APK PROTON   (each 0 or 1)
+# Usage: openwrt/variant.sh official|base|config|name AWG APK PROTON [ZAPRET]   (each 0 or 1)
 #
 #   AWG     AmneziaWG kernel module, tools and LuCI protocol
 #   APK     apk package manager (+ LuCI page). Such variants start from the
@@ -11,8 +11,10 @@
 #           diffconfig and mklibs, because packages installed later may need
 #           library functions it strips.
 #   PROTON  luci-theme-proton2025 as the default LuCI theme
+#   ZAPRET  zapret2 (nfqws2): YouTube and Discord go directly with DPI bypass
+#           (openwrt/packages/zapret2)
 
-what="$1" awg="$2" apk="$3" proton="$4"
+what="$1" awg="$2" apk="$3" proton="$4" zapret="${5:-0}"
 
 case "$what" in
 official)
@@ -51,6 +53,7 @@ base)
 name)
 	name=xray
 	[ "$awg" = 1 ] && name="$name-awg"
+	[ "$zapret" = 1 ] && name="$name-zapret"
 	[ "$proton" = 1 ] && name="$name-proton"
 	[ "$apk" = 1 ] && name="$name-apk"
 	echo "$name"
@@ -70,9 +73,12 @@ config)
 	if [ "$proton" = 1 ]; then
 		echo 'CONFIG_PACKAGE_luci-theme-proton2025=y'
 	fi
+	if [ "$zapret" = 1 ]; then
+		echo 'CONFIG_PACKAGE_zapret2=y'
+	fi
 	;;
 *)
-	echo "usage: $0 official|base|config|name AWG APK PROTON" >&2
+	echo "usage: $0 official|base|config|name AWG APK PROTON [ZAPRET]" >&2
 	exit 1
 	;;
 esac

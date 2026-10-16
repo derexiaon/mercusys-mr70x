@@ -4,7 +4,7 @@
 # rebuilds what changed (a few minutes).
 #
 # Usage: openwrt/build-variants.sh <openwrt src> <out dir> <variants file>
-#   variants file: one variant per line, "AWG APK PROTON" (0/1 each)
+#   variants file: one variant per line, "AWG APK PROTON ZAPRET" (0/1 each, ZAPRET optional)
 # Env: OPENWRT_VERSION, FIRMWARE_LIMIT (bytes), SUMMARY (markdown file to append to)
 set -euo pipefail
 
@@ -34,13 +34,14 @@ vermagic() {
 
 failed=0
 {
-	echo "| Вариант | AmneziaWG | apk | Proton | Размер прошивки | Свободно под настройки |"
-	echo "| --- | --- | --- | --- | --- | --- |"
+	echo "| Вариант | AmneziaWG | zapret2 | apk | Proton | Размер прошивки | Свободно под настройки |"
+	echo "| --- | --- | --- | --- | --- | --- | --- |"
 } >> "$SUMMARY"
 
-while read -r awg apk proton _; do
+while read -r awg apk proton zapret _; do
 	case "$awg" in ''|\#*) continue ;; esac
-	name="$(sh "$HERE/variant.sh" name "$awg" "$apk" "$proton")"
+	zapret="${zapret:-0}"
+	name="$(sh "$HERE/variant.sh" name "$awg" "$apk" "$proton" "$zapret")"
 	echo "::group::variant $name"
 
 	: > .config
@@ -51,15 +52,16 @@ while read -r awg apk proton _; do
 		cat official.config >> .config
 		sh "$HERE/variant.sh" official >> .config
 	fi
-	sh "$HERE/variant.sh" base "$awg" "$apk" "$proton" >> .config
-	sh "$HERE/variant.sh" config "$awg" "$apk" "$proton" >> .config
+	sh "$HERE/variant.sh" base "$awg" "$apk" "$proton" "$zapret" >> .config
+	sh "$HERE/variant.sh" config "$awg" "$apk" "$proton" "$zapret" >> .config
 	make defconfig >/dev/null
 
 	require CONFIG_TARGET_ramips_mt7621_DEVICE_mercusys_mr70x-v1=y CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=1024 \
 		CONFIG_PACKAGE_dnsmasq-full=y CONFIG_PACKAGE_pbr=y CONFIG_PACKAGE_kmod-tun=y \
-		CONFIG_PACKAGE_luci-i18n-base-ru=y CONFIG_PACKAGE_ppp-mod-pppoe=y
+		CONFIG_PACKAGE_luci-i18n-base-ru=y CONFIG_PACKAGE_ppp-mod-pppoe=y CONFIG_PACKAGE_zram-swap=y
 	[ "$awg" = 1 ] && require CONFIG_PACKAGE_kmod-amneziawg=y CONFIG_PACKAGE_luci-proto-amneziawg=y
 	[ "$proton" = 1 ] && require CONFIG_PACKAGE_luci-theme-proton2025=y
+	[ "$zapret" = 1 ] && require CONFIG_PACKAGE_zapret2=y CONFIG_PACKAGE_kmod-nft-queue=y
 	if [ "$apk" = 1 ]; then
 		require CONFIG_PACKAGE_apk-mbedtls=y CONFIG_PACKAGE_luci-app-package-manager=y '# CONFIG_USE_MKLIBS is not set' \
 			CONFIG_ALL_KMODS=y CONFIG_COLLECT_KERNEL_DEBUG=y
@@ -91,8 +93,9 @@ while read -r awg apk proton _; do
 	sysupgrade="$(ls "$TARGET_DIR"/*-squashfs-sysupgrade.bin)"
 	size=$(stat -c %s "$sysupgrade")
 	free=$(( (LIMIT - size) / 1024 ))
-	printf '| `%s` | %s | %s | %s | %s байт | %s КБ |\n' "$name" \
-		"$([ "$awg" = 1 ] && echo да || echo нет)" "$([ "$apk" = 1 ] && echo да || echo нет)" \
+	printf '| `%s` | %s | %s | %s | %s | %s байт | %s КБ |\n' "$name" \
+		"$([ "$awg" = 1 ] && echo да || echo нет)" "$([ "$zapret" = 1 ] && echo да || echo нет)" \
+		"$([ "$apk" = 1 ] && echo да || echo нет)" \
 		"$([ "$proton" = 1 ] && echo да || echo нет)" "$size" "$free" >> "$SUMMARY"
 	echo "$name: sysupgrade $size bytes, free for settings $free KiB"
 

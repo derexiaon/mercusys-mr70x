@@ -107,6 +107,12 @@ if ! uci -q get pbr.mr70x_domains >/dev/null; then
 	EOF
 	# Server exception must be evaluated before the other policies.
 	uci -q reorder pbr.mr70x_server=1
+	# zapret2 variants: Discord goes directly (with DPI bypass), so its subnets stay
+	# out of the tunnel; YouTube and Discord domains are kept out by zapret2 itself.
+	if [ -x /etc/init.d/zapret2 ]; then
+		uci -q set pbr.mr70x_subnets.name='Telegram, Meta, Twitter subnets'
+		uci -q set pbr.mr70x_subnets.dest_addr="$LISTS/Subnets/IPv4/telegram.lst $LISTS/Subnets/IPv4/meta.lst $LISTS/Subnets/IPv4/twitter.lst"
+	fi
 	[ "$HAVE_AWG" = 1 ] && uci -q add_list pbr.config.supported_interface='awg0'
 fi
 
