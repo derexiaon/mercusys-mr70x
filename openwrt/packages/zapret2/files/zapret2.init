@@ -125,7 +125,7 @@ start_service() {
 	opts="$(nfqws_opts)" || { echo "zapret2: no profiles in /etc/config/zapret2" >&2; return 1; }
 
 	# "ct original packets" needs conntrack accounting
-	sysctl -q -w net.netfilter.nf_conntrack_acct=1
+	echo 1 > /proc/sys/net/netfilter/nf_conntrack_acct 2>/dev/null
 
 	nft_up "$lan" "$qnum" "$mark" "$pout" "$pin" "$tcp" "$udp" "$discord" || return 1
 	dnsmasq_set on
