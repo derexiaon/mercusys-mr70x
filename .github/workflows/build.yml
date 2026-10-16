@@ -149,6 +149,9 @@ jobs:
             echo
             cat sizes.md
             echo
+            # the newest section of CHANGES.md
+            awk '/^## /{n++} n==1' CHANGES.md | sed '1s/^## .*/### Что нового/'
+            echo
             echo "- \`*-squashfs-factory.bin\` — прошивка из заводского веб-интерфейса Mercusys;"
             echo "- \`*-squashfs-sysupgrade.bin\` — обновление из OpenWrt (при первой установке — без сохранения настроек)."
             echo
