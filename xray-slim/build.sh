@@ -3,7 +3,7 @@
 # Usage: xray-slim/build.sh <xray-tag> <output-binary>
 set -euo pipefail
 
-TAG="${1:?xray tag, e.g. v26.3.27}"
+TAG="${1:?xray tag, e.g. v26.10.10}"
 OUT="$(realpath -m "${2:?output path}")"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="${XRAY_SRC:-$PWD/xray-src}"
@@ -23,6 +23,8 @@ cp "$HERE/stubs.go" infra/conf/zz_slim_stubs.go
 if [ -f "$HERE/patch.sh" ]; then
 	bash "$HERE/patch.sh" "$SRC"
 fi
+# drop the imports the cut-out code used
+go run golang.org/x/tools/cmd/goimports@v0.38.0 -w infra/conf
 
 export CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat
 go build -trimpath \

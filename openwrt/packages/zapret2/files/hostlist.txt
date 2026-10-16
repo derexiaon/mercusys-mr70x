@@ -1,0 +1,27 @@
+# Domains handled by zapret2 (subdomains included). They go directly, not through the VPN.
+# After changes: /etc/init.d/zapret2 restart
+# YouTube
+youtube.com
+youtu.be
+yt.be
+googlevideo.com
+ytimg.com
+ggpht.com
+youtube-nocookie.com
+youtubei.googleapis.com
+youtube.googleapis.com
+yt3.googleusercontent.com
+jnn-pa.googleapis.com
+# Discord
+discord.com
+discord.gg
+discord.media
+discord.dev
+discord.gift
+discord.new
+discord.co
+discordapp.com
+discordapp.net
+discordcdn.com
+discordstatus.com
+dis.gd

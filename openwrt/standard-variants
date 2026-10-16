@@ -1,11 +1,15 @@
-# Variants built for releases and pushes: AWG APK PROTON
+# Variants built for releases and pushes: AWG APK PROTON ZAPRET
 # xray: Xray only (recommended)
-0 0 0
+0 0 0 0
+# xray-zapret: + zapret2 (YouTube and Discord directly with DPI bypass)
+0 0 0 1
 # xray-proton: + Proton2025 theme
-0 0 1
+0 0 1 0
 # xray-awg: + AmneziaWG
-1 0 0
+1 0 0 0
 # xray-awg-proton: + AmneziaWG + Proton2025 theme
-1 0 1
-# xray-awg-proton-apk: everything
-1 1 1
+1 0 1 0
+# xray-awg-zapret-proton: everything without apk
+1 0 1 1
+# xray-awg-proton-apk: + apk with the official kernel (last: it rebuilds the kernel)
+1 1 1 0

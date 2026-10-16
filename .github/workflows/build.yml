@@ -18,6 +18,10 @@ on:
         description: AmneziaWG
         type: boolean
         default: false
+      zapret:
+        description: zapret2 — YouTube и Discord напрямую с обходом DPI
+        type: boolean
+        default: false
       proton:
         description: Тема LuCI Proton2025
         type: boolean
@@ -34,7 +38,7 @@ on:
         default: '25.12.5'
       xray_version:
         description: Тег Xray-core
-        default: 'v26.3.27'
+        default: 'v26.10.10'
 
 permissions:
   contents: write
@@ -45,7 +49,7 @@ concurrency:
 
 env:
   OPENWRT_VERSION: ${{ inputs.openwrt_version || '25.12.5' }}
-  XRAY_VERSION: ${{ inputs.xray_version || 'v26.3.27' }}
+  XRAY_VERSION: ${{ inputs.xray_version || 'v26.10.10' }}
   # IMAGE_SIZE of mercusys_mr70x-v1 in target/linux/ramips/image/mt7621.mk
   FIRMWARE_LIMIT: 16121856
 
@@ -66,18 +70,18 @@ jobs:
       - name: Select variants
         run: |
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "${{ inputs.variants }}" != "все стандартные варианты" ]; then
-            echo "${{ inputs.awg && '1' || '0' }} ${{ inputs.apk && '1' || '0' }} ${{ inputs.proton && '1' || '0' }}" > variants.txt
+            echo "${{ inputs.awg && '1' || '0' }} ${{ inputs.apk && '1' || '0' }} ${{ inputs.proton && '1' || '0' }} ${{ inputs.zapret && '1' || '0' }}" > variants.txt
           else
             grep -v '^#' openwrt/standard-variants > variants.txt
           fi
-          while read -r a p t; do echo "$(sh openwrt/variant.sh name $a $p $t)  (awg=$a apk=$p proton=$t)"; done < variants.txt
+          while read -r a p t z; do echo "$(sh openwrt/variant.sh name $a $p $t ${z:-0})  (awg=$a apk=$p proton=$t zapret=${z:-0})"; done < variants.txt
 
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential clang flex bison g++ gawk gcc-multilib \
             g++-multilib gettext git libncurses-dev libssl-dev python3-setuptools python3-dev \
-            rsync swig unzip zlib1g-dev file wget xsltproc zstd qemu-user-static >/dev/null
+            rsync swig unzip zlib1g-dev file wget xsltproc zstd qemu-user-static nftables >/dev/null
 
       - name: Fetch Xray-core ${{ env.XRAY_VERSION }}
         run: git clone --depth 1 -b "$XRAY_VERSION" https://github.com/XTLS/Xray-core.git xray-src
@@ -101,10 +105,13 @@ jobs:
           cat ../openwrt/feeds.conf.extra >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          sh ../openwrt/patch-feeds.sh .
           grep -v '^#' ../openwrt/extra-packages | while read -r name url commit; do
             git clone -q "$url" "package/$name"
             git -C "package/$name" checkout -q "$commit"
           done
+          # our own packages (zapret2)
+          cp -r ../openwrt/packages/. package/
           chmod 0755 ../files/etc/init.d/* ../files/usr/bin/* ../files/etc/uci-defaults/*
           {
             echo "OpenWrt $OPENWRT_VERSION + Xray $XRAY_VERSION (slim) + pbr"
@@ -113,7 +120,7 @@ jobs:
           cp -r ../files files
           # all packages any variant may need, for "make download"
           cp ../openwrt/diffconfig .config
-          sh ../openwrt/variant.sh config 1 1 1 >> .config
+          sh ../openwrt/variant.sh config 1 1 1 1 >> .config
           make defconfig
 
       - name: Cache source downloads
@@ -141,6 +148,9 @@ jobs:
             echo "OpenWrt $OPENWRT_VERSION для **Mercusys MR70X v1**, собрана из исходников: Xray $XRAY_VERSION (облегчённый: VLESS, Hysteria2, Trojan, Shadowsocks), pbr, подписки на VPN."
             echo
             cat sizes.md
+            echo
+            # the newest section of CHANGES.md
+            awk '/^## /{n++} n==1' CHANGES.md | sed '1s/^## .*/### Что нового/'
             echo
             echo "- \`*-squashfs-factory.bin\` — прошивка из заводского веб-интерфейса Mercusys;"
             echo "- \`*-squashfs-sysupgrade.bin\` — обновление из OpenWrt (при первой установке — без сохранения настроек)."

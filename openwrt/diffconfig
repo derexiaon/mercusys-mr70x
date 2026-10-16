@@ -17,7 +17,6 @@ CONFIG_USE_MKLIBS=y
 # Kernel without debug features (-150 KB). Official kmod-* packages are built
 # for the official kernel config, so they do not load into this kernel.
 # CONFIG_KERNEL_CRASHLOG is not set
-# CONFIG_KERNEL_SWAP is not set
 # CONFIG_KERNEL_DEBUG_FS is not set
 # CONFIG_KERNEL_DEBUG_KERNEL is not set
 # CONFIG_KERNEL_DEBUG_INFO is not set
@@ -32,6 +31,10 @@ CONFIG_USE_MKLIBS=y
 # CONFIG_KERNEL_FHANDLE is not set
 # CONFIG_COLLECT_KERNEL_DEBUG is not set
 # <<< slim-kernel ---------------------------------------------------------------
+
+# zram swap: compressed swap in RAM as a reserve for memory peaks (pbr lists,
+# subscription updates); needs CONFIG_KERNEL_SWAP (on by default).
+CONFIG_PACKAGE_zram-swap=y
 
 # No package manager: there is no room to install anything anyway.
 # CONFIG_PACKAGE_apk-mbedtls is not set
