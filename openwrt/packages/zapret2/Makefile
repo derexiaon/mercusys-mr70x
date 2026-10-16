@@ -12,6 +12,8 @@ PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/bol-van/zapret2.git
 PKG_SOURCE_VERSION:=0b8182d24a887059a628d7266577c4ba8e9b8f2d
 PKG_MIRROR_HASH:=skip
+# nfq2/sec.h includes <sys/capability.h>; capget/capset come from musl, nothing to link
+PKG_BUILD_DEPENDS:=libcap
 
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=docs/LICENSE.txt
