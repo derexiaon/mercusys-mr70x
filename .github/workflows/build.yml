@@ -34,7 +34,7 @@ on:
         default: '25.12.5'
       xray_version:
         description: Тег Xray-core
-        default: 'v26.3.27'
+        default: 'v26.10.10'
 
 permissions:
   contents: write
@@ -45,7 +45,7 @@ concurrency:
 
 env:
   OPENWRT_VERSION: ${{ inputs.openwrt_version || '25.12.5' }}
-  XRAY_VERSION: ${{ inputs.xray_version || 'v26.3.27' }}
+  XRAY_VERSION: ${{ inputs.xray_version || 'v26.10.10' }}
   # IMAGE_SIZE of mercusys_mr70x-v1 in target/linux/ramips/image/mt7621.mk
   FIRMWARE_LIMIT: 16121856
 
