@@ -8,19 +8,23 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PORT=18099
 
 mountpoint -q "$R/proc" || mount -t proc proc "$R/proc"
-HEADERS="$(mktemp)"
-python3 "$HERE/http-server.py" "$PORT" "$HERE/data" "$HEADERS" &
+TLSPORT=18443
+TMPD="$(mktemp -d)"
+HEADERS="$TMPD/headers"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=127.0.0.1 \
+	-keyout "$TMPD/key.pem" -out "$TMPD/cert.pem" 2>/dev/null
+python3 "$HERE/http-server.py" "$PORT" "$HERE/data" "$HEADERS" "$TLSPORT" "$TMPD/cert.pem" "$TMPD/key.pem" &
 HTTP=$!
-trap 'kill $HTTP; umount "$R/proc"; rm -f "$HEADERS"' EXIT
+trap 'kill $HTTP; umount "$R/proc"; rm -rf "$TMPD"' EXIT
 sleep 1
 
-run() { chroot "$R" /usr/bin/env XRAY_LINK_NO_RESTART=1 /bin/sh -c "$1"; }
+run() { chroot "$R" /usr/bin/env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY XRAY_LINK_NO_RESTART=1 /bin/sh -c "$1"; }
 check() { if run "$1"; then echo "ok: $2"; else echo "FAIL: $2"; exit 1; fi; }
 
 run '/usr/bin/xray version | head -1'
 
-# /etc/config/network is generated on the first boot by config_generate
-run 'touch /etc/config/network'
+# /etc/config/network and system are generated on the first boot by config_generate
+run 'touch /etc/config/network; [ -s /etc/config/system ] || printf "config system\n\toption hostname OpenWrt\n" > /etc/config/system'
 run '. /etc/uci-defaults/99-mr70x-xray'
 check '[ "$(uci get network.xray.proto)" = static ]' 'xray interface'
 check '[ "$(uci get pbr.@policy[0].name)" = "Xray server (direct)" ]' 'server policy is first'
@@ -37,6 +41,16 @@ if [ -d "$R/www/luci-static/proton2025" ]; then
 fi
 check '[ "$(uci get dhcp.@dnsmasq[0].filter_aaaa)" = 1 ]' 'AAAA filtered'
 check 'grep -q "xray-link --update" /etc/crontabs/root' 'subscription cron'
+
+# pbr has to download the https lists with uclient-fetch (openwrt/patch-feeds.sh)
+cat > "$R/tmp/pbr-dl.sh" <<'EOS'
+packageName=pbr
+json() { echo "pbr: $*" >&2; }
+eval "$(sed -n '/^is_url[a-z_]*()/p; /^is_present()/p; /^sanitize_list()/p; /^process_url() {/,/^}/p' /etc/init.d/pbr)"
+process_url "$1"
+EOS
+check "[ \"\$(sh /tmp/pbr-dl.sh https://127.0.0.1:$TLSPORT/list.txt)\" = 'discord.com youtube.com ' ]" 'pbr downloads https lists'
+check '[ -x /etc/init.d/zram ] && [ "$(uci get system.@system[0].zram_size_mb)" = 32 ]' 'zram swap, 32 MB'
 
 # start from a clean state (no subscription, no saved links)
 run 'uci -q delete xray.main.subscription; uci -q delete xray.main.server; uci commit xray; rm -f /etc/xray/subscription /etc/xray/links'

@@ -101,6 +101,7 @@ jobs:
           cat ../openwrt/feeds.conf.extra >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          sh ../openwrt/patch-feeds.sh .
           grep -v '^#' ../openwrt/extra-packages | while read -r name url commit; do
             git clone -q "$url" "package/$name"
             git -C "package/$name" checkout -q "$commit"
