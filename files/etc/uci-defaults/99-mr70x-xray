@@ -8,6 +8,11 @@ uci -q batch <<-EOF
 	set luci.main.lang='ru'
 EOF
 
+# zram swap (zram-swap package): 32 MB of compressed swap in RAM (default would be
+# half of the RAM). Change: uci set system.@system[0].zram_size_mb=N
+[ -x /etc/init.d/zram ] && [ -z "$(uci -q get system.@system[0].zram_size_mb)" ] &&
+	uci -q set system.@system[0].zram_size_mb='32'
+
 # Proton2025 theme (firmware variants with "proton") becomes the default one.
 [ -d /www/luci-static/proton2025 ] && uci -q set luci.main.mediaurlbase='/luci-static/proton2025'
 
